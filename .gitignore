@@ -19,6 +19,7 @@ assets/voice/
 assets/music/*
 !assets/music/.gitkeep
 *.mp4
+!docs/demo.mp4
 *.wav
 *.mp3
 *.m4a

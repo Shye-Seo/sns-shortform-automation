@@ -169,7 +169,10 @@ export function parseFfprobeJson(raw: string): RenderProbe {
   };
 }
 
-export async function probeMedia(path: string, bin = 'ffprobe'): Promise<RenderProbe> {
+export async function probeMedia(
+  path: string,
+  bin = process.env.FFPROBE_PATH ?? 'ffprobe',
+): Promise<RenderProbe> {
   const result = await runCommand(
     bin,
     ['-v', 'error', '-print_format', 'json', '-show_format', '-show_streams', path],

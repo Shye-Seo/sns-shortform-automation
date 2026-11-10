@@ -4,7 +4,7 @@ import { ShortformError } from '../lib/errors';
 import { round } from '../lib/ids';
 import { commandExists, probeMedia, runCommand } from '../lib/media';
 import { measureTextPx } from '../lib/text';
-import { assColor, buildMixFilter, computeDuckingEnvelope } from './audioEngine';
+import { assColor, assRgb, buildMixFilter, computeDuckingEnvelope } from './audioEngine';
 import { formatAssTime } from '../lib/timecode';
 import {
   CANVAS,
@@ -212,6 +212,7 @@ export function buildOverlayAss(options: OverlayAssOptions & { durationSec: numb
     'Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding',
     `Style: Badge,${style.fontName},34,${assColor('#0A0A0A')},${assColor('#0A0A0A')},${assColor('#FFD400')},${assColor('#FFD400')},-1,0,0,0,100,100,0,0,3,2,0,7,24,24,0,1`,
     `Style: Mark,${style.fontName},30,${assColor('#FFFFFF')},${assColor('#FFFFFF')},${assColor('#000000')},${assColor('#000000')},0,0,0,0,100,100,0,0,1,2,0,5,0,0,0,1`,
+    `Style: Bar,${style.fontName},20,${assColor('#FFFFFF')},${assColor('#FFFFFF')},${assColor('#FFFFFF')},${assColor('#FFFFFF')},-1,0,0,0,100,100,0,0,1,0,0,7,0,0,0,1`,
     '',
     '[Events]',
     'Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text',
@@ -223,6 +224,19 @@ export function buildOverlayAss(options: OverlayAssOptions & { durationSec: numb
       `Dialogue: 1,0:00:00.00,${end},Badge,,0,0,0,,{\\an7\\pos(${badge.x},${badge.y})}${badgeText.replace(/[{}]/g, '')}`,
     );
   }
+  // Progress bar as an ASS drawing animated with \t + \fscx. drawbox
+  // evaluates its geometry once, so a drawbox "progress bar" stays full width
+  // on every frame; an ASS animation advances with the subtitle clock.
+  const progress = layout.progress;
+  const durationMs = Math.max(1, Math.round(options.durationSec * 1000));
+  const drawing = `m 0 0 l ${progress.w} 0 l ${progress.w} ${progress.h} l 0 ${progress.h}`;
+  lines.push(
+    `Dialogue: 3,0:00:00.00,${end},Bar,,0,0,0,,{\\an7\\pos(${progress.x},${progress.y})\\p1\\c${assRgb('#FFFFFF')}\\alpha&H98&\\bord0\\shad0}${drawing}{\\p0}`,
+  );
+  lines.push(
+    `Dialogue: 4,0:00:00.00,${end},Bar,,0,0,0,,{\\an7\\pos(${progress.x},${progress.y})\\p1\\c${assRgb('#FFD400')}\\bord0\\shad0\\fscx1\\t(0,${durationMs},\\fscx100)}${drawing}{\\p0}`,
+  );
+
   if (watermark && watermarkText) {
     lines.push(
       `Dialogue: 1,0:00:00.00,${end},Mark,,0,0,0,,{\\an7\\pos(${watermark.x},${watermark.y})\\alpha&H40&}${watermarkText.replace(/[{}]/g, '')}`,
@@ -240,6 +254,8 @@ export interface FilterGraphInput {
   layout: OverlayLayout;
   subtitlePath: string;
   overlayPath?: string;
+  /** Directory holding the caption font (libass needs it for Korean glyphs). */
+  fontsDir?: string;
   hasBackgroundVideo: boolean;
   /** Input index of the background clip (0 = voice, then optional music). */
   backgroundInputIndex?: number;
@@ -267,25 +283,28 @@ export function buildVideoFilterGraph(input: FilterGraphInput): string {
   }
 
   // Three stepped bands approximate a gradient without a full geq pass.
-  const scrimTop = layout.caption.y - 140;
-  const band = Math.round((CANVAS.height - scrimTop) / 3);
-  parts.push(
-    `[bg]drawbox=x=0:y=${scrimTop}:w=${CANVAS.width}:h=${band}:color=black@0.12:t=fill,` +
-      `drawbox=x=0:y=${scrimTop + band}:w=${CANVAS.width}:h=${band}:color=black@0.2:t=fill,` +
-      `drawbox=x=0:y=${scrimTop + band * 2}:w=${CANVAS.width}:h=${CANVAS.height - scrimTop - band * 2}:color=black@0.3:t=fill[scrimmed]`,
-  );
-
-  const progress = layout.progress;
-  parts.push(
-    `[scrimmed]drawbox=x=${progress.x}:y=${progress.y}:w='min(${progress.w}\\,max(0\\,(t/${duration})*${progress.w}))':` +
-      `h=${progress.h}:color=0xFFD400@0.95:t=fill[prog]`,
-  );
+  const scrimTop = layout.caption.y - 160;
+  const bands = 10;
+  const bandHeight = Math.round((CANVAS.height - scrimTop) / bands);
+  const bandFilters: string[] = [];
+  for (let index = 0; index < bands; index += 1) {
+    const alpha = round(0.04 + (index + 1) * 0.028, 3);
+    const height =
+      index === bands - 1 ? CANVAS.height - scrimTop - bandHeight * index : bandHeight;
+    bandFilters.push(
+      `drawbox=x=0:y=${scrimTop + bandHeight * index}:w=${CANVAS.width}:h=${height}:color=black@${alpha}:t=fill`,
+    );
+  }
+  parts.push(`[bg]${bandFilters.join(',')}[scrimmed]`);
 
   const subFile = escapeFilterPath(input.subtitlePath);
-  parts.push(`[prog]ass=filename=${subFile}[captioned]`);
+  const fonts = input.fontsDir ? `:fontsdir=${escapeFilterPath(input.fontsDir)}` : '';
+  // The progress bar lives in overlay.ass: only ASS animations advance with
+  // the frame clock inside a single render pass.
+  parts.push(`[scrimmed]ass=filename=${subFile}${fonts}[captioned]`);
 
   if (input.overlayPath) {
-    parts.push(`[captioned]ass=filename=${escapeFilterPath(input.overlayPath)}[vout]`);
+    parts.push(`[captioned]ass=filename=${escapeFilterPath(input.overlayPath)}${fonts}[vout]`);
   } else {
     parts.push(`[captioned]null[vout]`);
   }
@@ -352,6 +371,7 @@ export interface RenderJobInput {
   layout?: OverlayLayout;
   style?: Partial<SubtitleStyle>;
   badgeText?: string;
+  fontsDir?: string;
   ffmpegBin?: string;
   /** Voice segments used to compute the ducking envelope. */
   voiceSegments?: Array<{ startSec: number; endSec: number }>;
@@ -369,6 +389,7 @@ export function buildRenderJob(input: RenderJobInput): RenderJob {
     layout,
     subtitlePath: resolve(input.subtitlePath),
     overlayPath: input.overlayPath ? resolve(input.overlayPath) : undefined,
+    fontsDir: input.fontsDir,
     hasBackgroundVideo: Boolean(input.backgroundPath),
     backgroundInputIndex: input.musicPath ? 2 : 1,
   })];

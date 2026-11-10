@@ -74,6 +74,7 @@ program
   .option('--music <file>', '배경음악 파일')
   .option('--background <file>', '배경 영상/이미지')
   .option('--badge <text>', '상단 카테고리 뱃지 문구')
+  .option('--fonts <dir>', '자막 폰트 디렉토리 (한글 폰트는 필수)', process.env.SHORTFORM_FONTS_DIR)
   .option('--model', 'OpenAI로 대본 초안 생성 (OPENAI_API_KEY 필요)')
   .option('--no-voice', '보이스/자막/렌더 플랜 없이 대본만')
   .option('--json', 'JSON으로 출력')
@@ -106,6 +107,7 @@ program
         musicPath: options.music ? resolve(options.music) : undefined,
         backgroundPath: options.background ? resolve(options.background) : undefined,
         badgeText: options.badge,
+        fontsDir: options.fonts,
         logger: log,
       });
 

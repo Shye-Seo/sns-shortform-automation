@@ -419,6 +419,15 @@ export function buildVtt(cues: Cue[]): string {
   return `WEBVTT\n\n${blocks.join('\n\n')}\n`;
 }
 
+/** Inline ASS colour without alpha: \c&HBBGGRR& */
+export function assRgb(hex: string): string {
+  const clean = hex.replace('#', '').toUpperCase();
+  const r = clean.slice(0, 2);
+  const g = clean.slice(2, 4);
+  const b = clean.slice(4, 6);
+  return `&H${b}${g}${r}&`;
+}
+
 export function assColor(hex: string, alpha = 0): string {
   const clean = hex.replace('#', '').toUpperCase();
   const r = clean.slice(0, 2);

@@ -3,6 +3,7 @@ import { join } from 'node:path';
 import { ShortformError } from './lib/errors';
 import { slugify } from './lib/ids';
 import { silentLogger, type Logger } from './lib/logger';
+import { topicHeadKeyword } from './lib/text';
 import { probeMedia } from './lib/media';
 import {
   AudioEngine,
@@ -43,6 +44,7 @@ export interface BuildEpisodeOptions {
   badgeText?: string;
   musicPath?: string;
   backgroundPath?: string;
+  fontsDir?: string;
   ttsName?: string;
   tts?: TtsProvider;
   model?: ScriptModel;
@@ -174,7 +176,8 @@ export async function buildEpisode(
   await writeFile(scriptPath, JSON.stringify(script, null, 2), 'utf8');
   await writeFile(storyboardPath, storyboardMarkdown(script, scriptWarnings), 'utf8');
 
-  const badgeText = options.badgeText ?? (script.keywords[0] ?? '').toUpperCase();
+  const badgeText =
+    options.badgeText ?? topicHeadKeyword(script.topic, script.language) ?? script.keywords[0] ?? '';
   const layout = planOverlayLayout(platform, {
     style: options.style,
     badgeText,
@@ -259,6 +262,7 @@ export async function buildEpisode(
       layout,
       style: options.style,
       voiceSegments: segments,
+      fontsDir: options.fontsDir ?? process.env.SHORTFORM_FONTS_DIR,
     });
     artifacts.renderPlanPath = join(projectDir, 'render-plan.json');
     await writeFile(artifacts.renderPlanPath, JSON.stringify(render, null, 2), 'utf8');

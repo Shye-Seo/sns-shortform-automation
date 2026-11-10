@@ -9,6 +9,7 @@ import {
   planOverlayLayout,
   rectsOverlap,
   renderJob,
+  buildOverlayAss,
   PLATFORM_UI_ZONES,
 } from '../src/services/videoCompositor';
 import { CANVAS, type Platform, type RenderProbe } from '../src/types/render';
@@ -113,15 +114,16 @@ describe('filter graph', () => {
     expect(graph).toContain('crop=1080:1920');
   });
 
-  it('draws the progress bar as a function of playback time', () => {
+  it('draws a stepped scrim but leaves the progress bar to ASS', () => {
     const graph = buildVideoFilterGraph({
       durationSec: 40,
       layout,
       subtitlePath: '/tmp/captions.ass',
       hasBackgroundVideo: false,
     });
-    expect(graph).toMatch(/drawbox=x=\d+:y=\d+:w='min\(\d+/);
-    expect(graph).toContain('h=10:color=0xFFD400');
+    expect((graph.match(/drawbox=x=0:y=\d+/g) ?? []).length).toBe(10);
+    // drawbox evaluates its geometry once, so a time-based bar must not live here.
+    expect(graph).not.toContain("w='min(");
   });
 
   it('has balanced labels so ffmpeg can parse it', () => {
@@ -135,6 +137,38 @@ describe('filter graph', () => {
     const opens = graph.match(/\[/g) ?? [];
     const closes = graph.match(/\]/g) ?? [];
     expect(opens.length).toBe(closes.length);
+  });
+});
+
+describe('overlay ASS', () => {
+  const layout = planOverlayLayout('instagram-reels', { badgeText: '주방수납' });
+
+  it('animates the progress bar with the subtitle clock', () => {
+    const ass = buildOverlayAss({ durationSec: 33.12, style: SubtitleStyleSchema.parse({}), layout, badgeText: '주방수납' });
+    expect(ass).toContain('\\fscx1\\t(0,33120,\\fscx100)');
+    expect(ass).toContain(`\\pos(${layout.progress.x},${layout.progress.y})`);
+    // A track and a fill event, both carrying a drawing block.
+    expect((ass.match(/\\p1/g) ?? []).length).toBe(2); // track + fill
+    expect((ass.match(/\\p0/g) ?? []).length).toBe(2);
+  });
+
+  it('draws the badge inside its reserved rectangle', () => {
+    const ass = buildOverlayAss({ durationSec: 10, style: SubtitleStyleSchema.parse({}), layout, badgeText: '주방수납' });
+    const badgeY = layout.badge?.y as number;
+    expect(ass).toContain(`\\pos(${layout.badge?.x},${badgeY})`);
+    expect(ass).toContain('주방수납');
+  });
+
+  it('passes a font directory to libass when one is configured', () => {
+    const graph = buildVideoFilterGraph({
+      durationSec: 10,
+      layout,
+      subtitlePath: '/tmp/captions.ass',
+      overlayPath: '/tmp/overlay.ass',
+      fontsDir: '/tmp/fonts',
+      hasBackgroundVideo: false,
+    });
+    expect(graph).toContain(":fontsdir='/tmp/fonts'");
   });
 });
 

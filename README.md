@@ -6,6 +6,12 @@
 
 `TypeScript` · `Node.js 20` · `ffmpeg` · `Vitest` · 테스트 144개 / 커버리지 약 80%
 
+| 훅 (0.0s) | 본문 (12s) | CTA (31s) |
+|:---:|:---:|:---:|
+| ![hook](docs/preview/hook.jpg) | ![caption](docs/preview/caption.jpg) | ![cta](docs/preview/cta.jpg) |
+
+> 위 프레임은 이 저장소의 파이프라인이 **실제로 렌더한 `docs/demo.mp4`**에서 추출했습니다 (ffmpeg 6.0, 1080×1920, 33.13s, 1.2MB). 음성은 오프라인 합성 보이스(테스트용 톤)입니다.
+
 ---
 
 ## 1. 문제: 숏폼 한 편에 90분이 사라지는 이유
@@ -212,7 +218,8 @@ sudo apt install ffmpeg
 npm run cli -- craft \
   --topic "부산 신혼집 3평 주방 수납 정리법" \
   --raw examples/kitchen.md \
-  --duration 45 --platform instagram-reels --cta save
+  --duration 45 --platform instagram-reels --cta save \
+  --fonts ~/fonts            # 한글 자막 폰트 디렉터리 (libass)
 
 # 2) 검수 시트 확인 → 승인 (사람이 하는 유일한 단계)
 npm run cli -- review --project .work/부산-신혼집-...-8a5e
@@ -303,7 +310,30 @@ CI는 네트워크·ffmpeg 없이 동작합니다. 외부 API는 의존성 주�
 
 ---
 
-## 9. 정직한 경계
+## 9. 실제 렌더 검증
+
+`docs/demo.mp4`는 다음 명령으로 생성된 실제 결과물입니다.
+
+```bash
+ffmpeg=ffmpeg-6.0-static ffprobe=ffprobe-static \
+SHORTFORM_FONTS_DIR=~/fonts \
+npm run cli -- craft --topic "부산 신혼집 3평 주방 수납 정리법" --raw examples/kitchen.md --duration 40
+npm run cli -- render --project .work/부산-신혼집-... --execute
+npm run cli -- validate --file .work/부산-신혼집-.../render.mp4
+```
+
+```
+✅ 렌더 완료
+   1080x1920 30.00fps h264/yuv420p · 33.13s · 1.2MB · aac 48000Hz 2ch
+   업로드 가능: 12/13 항목 통과, 경고 1
+   ⚠ 비트레이트: 131kbps (권장 4000–12000kbps)
+```
+
+비트레이트 경고는 **정적 배경 + 단색 캡션**이라 CRF 18에서 압축률이 극단적으로 높기 때문입니다(B롤을 넣으면 정상 범위로 올라갑니다). 프리플라이트는 이를 실패가 아닌 경고로 처리해, 실제 게시는 막지 않으면서 담당자에게 알립니다.
+
+한글 자막을 burn-in 하려면 폰트가 필요합니다. `--fonts <dir>`(또는 `SHORTFORM_FONTS_DIR`)로 TTF/OTF 디렉터리를 넘기면 libass가 해당 폰트로 렌더합니다. 폰트를 지정하지 않으면 시스템 폰트로 폴백하며, 한글 글리프가 없으면 네모(□)로 보일 수 있습니다.
+
+## 10. 정직한 경계
 
 만들어 놓고 "다 된다"고 말하지 않기 위해, 검증된 것과 아닌 것을 나눕니다.
 
@@ -312,7 +342,7 @@ CI는 네트워크·ffmpeg 없이 동작합니다. 외부 API는 의존성 주�
 | 대본 구조·타임버짓·압축 | ✅ 구현·테스트 |
 | 단어 정렬·자막 3종 생성·키네틱 ASS | ✅ 구현·테스트 (실제 폰트 렌더는 ffmpeg 필요) |
 | 더킹 엔벨로프·ffmpeg 표현식 | ✅ 구현·테스트 (실제 청감 검수는 미실시) |
-| 9:16 필터그래프·인코딩 인자 | ✅ 생성·테스트 / 실제 MP4 인코딩은 ffmpeg 환경에서만 |
+| 9:16 필터그래프·인코딩 | ✅ ffmpeg 6.0으로 실제 MP4 렌더·프리플라이트 통과 (`docs/demo.mp4`) |
 | 프리플라이트 10항목 | ✅ 구현·테스트 (실제 ffprobe 결과 파싱 포함) |
 | Meta/YouTube API 호출 | ✅ 프로토콜·재시도·리줌 구현, fake HTTP로 테스트 / **실계정 게시는 자격증명 필요** |
 | 인스타 영상 호스팅 | ⚠️ Meta가 URL을 직접 내려받으므로 공개 HTTPS URL 필요 (S3/R2 등) |
@@ -322,7 +352,7 @@ CI는 네트워크·ffmpeg 없이 동작합니다. 외부 API는 의존성 주�
 
 ---
 
-## 10. English
+## 11. English
 
 **shortform-engine** turns a topic into a publish-ready 9:16 video: a four-beat 60-second script, word-level captions, audio ducking, H.264 render, and validated uploads — with a human approval gate before anything goes live.
 
