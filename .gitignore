@@ -1,0 +1,40 @@
+# dependencies
+node_modules/
+.pnp.*
+
+# build output
+dist/
+*.tsbuildinfo
+
+# test & coverage
+coverage/
+.vitest/
+tests/**/__snapshots__/*.actual.*
+
+# local workflow artifacts (scripts, audio, renders, projects)
+.work/
+out/
+renders/
+assets/voice/
+assets/music/*
+!assets/music/.gitkeep
+*.mp4
+*.wav
+*.mp3
+*.m4a
+!fixtures/**/*.wav
+
+# secrets & machine state
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# editors / OS
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*.log
+npm-debug.log*
