@@ -209,25 +209,25 @@ sudo apt install ffmpeg
 
 ```bash
 # 1) 대본 + 보이스 + 자막 + 렌더 플랜
-npx shortform craft \
+npm run cli -- craft \
   --topic "부산 신혼집 3평 주방 수납 정리법" \
   --raw examples/kitchen.md \
   --duration 45 --platform instagram-reels --cta save
 
 # 2) 검수 시트 확인 → 승인 (사람이 하는 유일한 단계)
-npx shortform review --project .work/부산-신혼집-...-8a5e
-npx shortform review --project .work/부산-신혼집-...-8a5e --approve --by 서승혜
+npm run cli -- review --project .work/부산-신혼집-...-8a5e
+npm run cli -- review --project .work/부산-신혼집-...-8a5e --approve --by 서승혜
 
 # 3) 렌더 (기본은 플랜만, --execute 로 인코딩)
-npx shortform render --project .work/부산-신혼집-...-8a5e
-npx shortform render --project .work/부산-신혼집-...-8a5e --execute
+npm run cli -- render --project .work/부산-신혼집-...-8a5e
+npm run cli -- render --project .work/부산-신혼집-...-8a5e --execute
 
 # 4) 규격 검증
-npx shortform validate --file .work/.../render.mp4 --platform instagram-reels
+npm run cli -- validate --file .work/.../render.mp4 --platform instagram-reels
 
 # 5) 게시 (기본 드라이런)
-npx shortform publish --project .work/... --video-url https://cdn.example.com/render.mp4
-npx shortform publish --project .work/... --video-url https://cdn.example.com/render.mp4 --live
+npm run cli -- publish --project .work/... --video-url https://cdn.example.com/render.mp4
+npm run cli -- publish --project .work/... --video-url https://cdn.example.com/render.mp4 --live
 ```
 
 실제 `craft` 출력:
@@ -334,10 +334,10 @@ CI는 네트워크·ffmpeg 없이 동작합니다 (`.github/workflows/ci.yml`). 
 
 ```bash
 npm ci && npm run verify
-npx shortform craft --topic "small kitchen storage" --duration 45
-npx shortform review --project .work/<episode> --approve
-npx shortform render --project .work/<episode> --execute
-npx shortform publish --project .work/<episode> --video-url https://cdn.example.com/render.mp4
+npm run cli -- craft --topic "small kitchen storage" --duration 45
+npm run cli -- review --project .work/<episode> --approve
+npm run cli -- render --project .work/<episode> --execute
+npm run cli -- publish --project .work/<episode> --video-url https://cdn.example.com/render.mp4
 ```
 
 ---

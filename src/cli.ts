@@ -153,8 +153,8 @@ program
           `   결과물: ${episode.artifacts.projectDir}`,
           '',
           '   다음 단계:',
-          `     npx shortform review --project ${episode.artifacts.projectDir}`,
-          `     npx shortform render --project ${episode.artifacts.projectDir} --execute`,
+          `     npm run cli -- review --project ${episode.artifacts.projectDir}`,
+          `     npm run cli -- render --project ${episode.artifacts.projectDir} --execute`,
           episode.warnings.length
             ? `\n   ⚠ ${episode.warnings.join('\n   ⚠ ')}`
             : '',
@@ -196,7 +196,7 @@ program
             `   코덱: ${job.encoding.videoCodec}/${job.encoding.profile}/${job.encoding.pixFmt} @ ${job.canvas.width}x${job.canvas.height} ${job.canvas.fps}fps`,
             '',
             '   실행하려면:',
-            `     npx shortform render --project ${options.project} --execute`,
+            `     npm run cli -- render --project ${options.project} --execute`,
             '',
             `   ffmpeg ${job.ffmpeg.args.join(' ')}`,
             '',
@@ -302,7 +302,7 @@ program
       }
       process.stdout.write(`\n${reviewMarkdown}\n`);
       process.stdout.write(
-        `\n승인 지문: ${hash.slice(0, 16)}…\n승인하려면: npx shortform review --project ${options.project} --approve\n\n`,
+        `\n승인 지문: ${hash.slice(0, 16)}…\n승인하려면: npm run cli -- review --project ${options.project} --approve\n\n`,
       );
     } catch (error) {
       fail(error);
@@ -359,7 +359,7 @@ program
       if (!report) {
         throw new ShortformError('렌더 결과물이 없어 프리플라이트를 수행할 수 없습니다', {
           code: 'VALIDATION',
-          details: { hint: `npx shortform render --project ${options.project} --execute` },
+          details: { hint: `npm run cli -- render --project ${options.project} --execute` },
         });
       }
       if (options.live) assertPublishable(report);
