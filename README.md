@@ -297,7 +297,9 @@ npm run verify        # typecheck + lint + test
 | `pipeline.test.ts` | 프로젝트 산출물 전체, 보이스 오버런 재배치, 승인 무효화 |
 | `media.test.ts` | ffprobe 파싱, 백오프, 토큰 버킷 |
 
-CI는 네트워크·ffmpeg 없이 동작합니다 (`.github/workflows/ci.yml`). 외부 API는 의존성 주입으로 fake HTTP를 사용합니다.
+CI는 네트워크·ffmpeg 없이 동작합니다. 외부 API는 의존성 주입으로 fake HTTP를 사용합니다.
+
+> 워크플로 템플릿은 `docs/ci.yml`에 있습니다. 저장소 앱 권한에 `workflows`가 없어 `.github/workflows/`에 직접 두지 못했으므로, 필요할 때 그 경로로 복사해 활성화하세요.
 
 ---
 
