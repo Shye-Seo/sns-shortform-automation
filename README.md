@@ -4,7 +4,7 @@
 
 릴스·쇼츠용 60초 대본 작성부터 단어 단위 자막 싱크, 오디오 더킹, 9:16 인코딩, Meta Graph / YouTube Data API 게시까지 한 파이프라인으로 처리합니다. 단, **게시 버튼은 사람이 누릅니다** — 100% 무인 봇이 계정 정지로 이어지는 구조를 피하기 위해 Human-in-the-Loop로 설계했습니다.
 
-`TypeScript` · `Node.js 20` · `ffmpeg` · `Vitest` · 테스트 144개 / 커버리지 약 80%
+`TypeScript` · `Node.js 20` · `ffmpeg` · `Vitest` · 테스트 147개 / 커버리지 약 80%
 
 | 훅 (0.0s) | 본문 (12s) | CTA (31s) |
 |:---:|:---:|:---:|
@@ -188,7 +188,7 @@ volume=eval=frame:volume='if(lt(t,1.12),0.55-0.4*(t-1)/0.12,if(lt(t,2),0.15,...)
 git clone https://github.com/Shye-Seo/sns-shortform-automation.git
 cd sns-shortform-automation
 npm ci
-npm run verify          # 타입체크 + 린트 + 테스트 144개
+npm run verify          # 타입체크 + 린트 + 테스트 147개
 ```
 
 ffmpeg가 없어도 **대본·보이스·자막·렌더 플랜**까지 전부 생성됩니다. 실제 MP4 인코딩과 미디어 검증만 ffmpeg가 필요합니다.
@@ -288,7 +288,7 @@ npm run cli -- publish --project .work/... --video-url https://cdn.example.com/r
 ## 8. 테스트
 
 ```bash
-npm test              # 144 tests, 8 files
+npm test              # 147 tests, 8 files
 npm run coverage      # 약 80% line coverage
 npm run verify        # typecheck + lint + test
 ```
@@ -300,6 +300,7 @@ npm run verify        # typecheck + lint + test
 | `subtitles.test.ts` | 픽셀 기반 줄바꿈 DP, 큐 분할, SRT/VTT/ASS 포맷 |
 | `preflight.test.ts` | 10개 규격 항목 각각의 통과·경고·실패 판정 |
 | `publisher.test.ts` | 인스타 컨테이너 폴링, 쿼터, YouTube 308 리줌, 승인 해시 |
+| `compositor`의 overlay 케이스 | 프로그레스 바 ASS 애니메이션, 뱃지 좌표, fontsdir 전달 |
 | `compositor.test.ts` | 플랫폼 안전영역 충돌, 필터그래프 라벨 균형, 인코딩 인자 |
 | `pipeline.test.ts` | 프로젝트 산출물 전체, 보이스 오버런 재배치, 승인 무효화 |
 | `media.test.ts` | ffprobe 파싱, 백오프, 토큰 버킷 |
@@ -362,7 +363,7 @@ npm run cli -- validate --file .work/부산-신혼집-.../render.mp4
 - **Compositor** — 1080×1920@30, H.264 High, yuv420p, AAC 192k, faststart. Overlays are placed inside the platform content box, which excludes the Reels action rail (x ≥ 880) and Shorts caption sheet (y ≥ 1580).
 - **Publishers** — Instagram container → status polling → media_publish with quota checks; YouTube resumable upload that resumes from the server's `Range` after a 308 instead of restarting a 100MB upload.
 - **Human-in-the-Loop** — `review --approve` stores a sha256 of script + caption + subtitles; `publish` refuses when the artifact changed afterwards.
-- **Tests** — 144 Vitest cases, ~80% line coverage, no network and no ffmpeg required (fake HTTP clients, synthetic WAV fixtures).
+- **Tests** — 147 Vitest cases, ~80% line coverage, no network and no ffmpeg required (fake HTTP clients, synthetic WAV fixtures).
 
 ```bash
 npm ci && npm run verify
