@@ -20,6 +20,18 @@ import {
   publishPayload,
 } from './services/publisher';
 import { describeProbe } from './services/videoCompositor';
+import { JobQueue } from './lib/queue/jobQueue';
+import { FileQueueStore } from './lib/queue/fileStore';
+import { WorkerPool } from './lib/queue/workerPool';
+import { createProjectRenderHandler, createSimulatedRenderHandler } from './lib/queue/renderJob';
+import { generateHookVariants } from './lib/telemetry/hooks';
+import { TelemetryIngestor } from './lib/telemetry/metrics';
+import { evaluateExperiment } from './lib/telemetry/significance';
+import { planPublishSlots, gapStatistics } from './lib/rateLimit/jitter';
+import { TenantRegistry } from './lib/rateLimit/tenantRegistry';
+import type { HookAngle } from './types/telemetry';
+import { StudioConsole } from './services/studio/console';
+import { createDemoStudio } from './services/studio/demo';
 import type { Platform } from './types/render';
 import type { PublishPayload } from './types/publish';
 
@@ -486,6 +498,365 @@ program
         process.stdout.write(`${scene.startSec.toFixed(1).padStart(5)}s [${scene.beat}] ${scene.narration}\n`);
       }
       process.stdout.write(`\n${script.caption}\n\n`);
+    } catch (error) {
+      fail(error);
+    }
+  });
+
+/* ── queue ─────────────────────────────────────────────────────────────── */
+
+const queueCommand = program
+  .command('queue')
+  .description('분산 비동기 렌더 큐 (파일 상태 기반, 워커 풀 실행)');
+
+queueCommand
+  .command('run')
+  .description('작업을 큐에 넣고 워커 풀로 처리 (기본은 렌더 시뮬레이션)')
+  .option('--jobs <n>', '데모 작업 수', '6')
+  .option('--concurrency <n>', '동시 워커 수', '3')
+  .option('--chunks <n>', '청크 수', '4')
+  .option('--duration <sec>', '영상 길이(초)', '45')
+  .option('--tenant <id>', '테넌트 ID', 'studio-demo')
+  .option('--fail-every <n>', 'N번째 작업을 첫 시도에서 실패시켜 재시도 시연', '0')
+  .option('--state <file>', '큐 상태 파일', '.work/queue/state.json')
+  .option('--project <dir>', '실제 프로젝트를 큐에 넣고 렌더')
+  .option('--execute', 'ffmpeg로 실제 인코딩 (--project 와 함께)')
+  .option('--json', 'JSON으로 출력')
+  .action(async (options) => {
+    try {
+      const queue = new JobQueue({
+        store: new FileQueueStore(String(options.state)),
+        retry: { baseDelayMs: 300, maxDelayMs: 2_000, jitterRatio: 0.5, maxAttempts: 3 },
+      });
+      const chunks = Number(options.chunks);
+      const durationSec = Number(options.duration);
+      const jobCount = options.project ? 1 : Math.max(1, Number(options.jobs));
+      for (let index = 0; index < jobCount; index += 1) {
+        const projectId = options.project
+          ? resolve(String(options.project))
+          : `demo-episode-${String(index + 1).padStart(2, '0')}`;
+        await queue.enqueue({
+          tenantId: String(options.tenant),
+          name: `render ${projectId}`,
+          priority: index === 0 ? 9 : 5,
+          payload: {
+            projectId,
+            platform: index % 4 === 0 ? 'youtube-shorts' : 'instagram-reels',
+            durationSec,
+            chunkCount: chunks,
+          },
+          dedupeKey: options.project ? `render:${projectId}` : undefined,
+        });
+      }
+
+      const failEvery = Math.max(0, Number(options.failEvery));
+      const computed = options.project
+        ? createProjectRenderHandler({
+            render: async (projectDir, config) => {
+              const { job } = await renderProject(projectDir, { execute: config.execute });
+              return { status: job.status, output: job.output, warnings: job.warnings };
+            },
+          })
+        : createSimulatedRenderHandler({
+            chunkMs: 8,
+            sleep: (ms) => new Promise((r) => setTimeout(r, ms)),
+            failOn: (job) => {
+              if (failEvery === 0) return null;
+              const index = Number(job.name.match(/(\d+)$/)?.[1] ?? 0);
+              return index > 0 && index % failEvery === 0 ? 'simulated encoder failure' : null;
+            },
+          });
+      const pool = new WorkerPool({
+        queue,
+        size: Math.max(1, Number(options.concurrency)),
+        handler: computed,
+      });
+      const summary = await pool.drain({ waitForDelayed: true, maxDrainMs: 600_000 });
+      const stats = await queue.stats();
+      const dlq = await queue.list('dlq');
+
+      if (options.json) {
+        printJson({ summary, stats, dlq: dlq.map((job) => ({ id: job.id, name: job.name, error: job.lastError })) });
+        return;
+      }
+      process.stdout.write(
+        [
+          '',
+          `⚙ 큐 처리 시도 ${summary.processed}건 (성공 ${summary.succeeded} / 실패 ${summary.failed}) · ${summary.durationMs}ms`,
+          `   최대 동시 워커 ${summary.maxConcurrency} · 평균 처리 ${stats.meanLatencyMs}ms · p95 ${stats.p95LatencyMs}ms`,
+          `   waiting ${stats.counts.waiting} · delayed ${stats.counts.delayed} · dlq ${stats.counts.dlq}`,
+          '',
+          '   워커별 부하:',
+          ...pool.loads.map(
+            (load) =>
+              `     ${load.workerId.padEnd(10)} ${String(Math.round(load.utilization * 100)).padStart(3)}%  완료 ${load.jobsProcessed} · 실패 ${load.jobsFailed}`,
+          ),
+          dlq.length ? `\n   DLQ: ${dlq.map((job) => job.id).join(', ')}` : '',
+          '',
+        ].join('\n'),
+      );
+    } catch (error) {
+      fail(error);
+    }
+  });
+
+queueCommand
+  .command('status')
+  .description('저장된 큐 상태와 통계를 출력')
+  .option('--state <file>', '큐 상태 파일', '.work/queue/state.json')
+  .option('--json', 'JSON으로 출력')
+  .action(async (options) => {
+    try {
+      const queue = new JobQueue({ store: new FileQueueStore(String(options.state)) });
+      const stats = await queue.stats();
+      const jobs = await queue.list();
+      if (options.json) {
+        printJson({ stats, jobs });
+        return;
+      }
+      process.stdout.write(
+        [
+          '',
+          `QUEUE ${String(options.state)}`,
+          `  total ${stats.total} · 성공률 ${(stats.successRate * 100).toFixed(1)}% · 평균 ${stats.meanLatencyMs}ms · p95 ${stats.p95LatencyMs}ms · 재시도 ${stats.retries}`,
+          `  waiting ${stats.counts.waiting} · delayed ${stats.counts.delayed} · active ${stats.counts.active} · completed ${stats.counts.completed} · failed ${stats.counts.failed} · dlq ${stats.counts.dlq}`,
+          '',
+          ...jobs
+            .slice(0, 25)
+            .map(
+              (job) =>
+                `  ${job.id.padEnd(10)} ${job.state.padEnd(9)} ${String(job.progress).padStart(5)}%  p${job.priority}  ${job.tenantId.padEnd(14)} ${job.name}`,
+            ),
+          '',
+        ].join('\n'),
+      );
+    } catch (error) {
+      fail(error);
+    }
+  });
+
+queueCommand
+  .command('dlq')
+  .description('Dead Letter Queue 목록')
+  .option('--state <file>', '큐 상태 파일', '.work/queue/state.json')
+  .option('--json', 'JSON으로 출력')
+  .action(async (options) => {
+    try {
+      const queue = new JobQueue({ store: new FileQueueStore(String(options.state)) });
+      const jobs = await queue.list('dlq');
+      if (options.json) {
+        printJson(jobs);
+        return;
+      }
+      if (jobs.length === 0) {
+        process.stdout.write('\nDLQ 비어 있음\n\n');
+        return;
+      }
+      process.stdout.write(
+        [
+          '',
+          `DLQ ${jobs.length}건`,
+          ...jobs.map(
+            (job) => `  ${job.id}  ${job.tenantId}  attempts ${job.attempts}  ${job.lastError ?? ''}`,
+          ),
+          '',
+          '  재처리: npm run cli -- queue replay <jobId>',
+          '',
+        ].join('\n'),
+      );
+    } catch (error) {
+      fail(error);
+    }
+  });
+
+queueCommand
+  .command('replay <jobId>')
+  .description('DLQ/failed 작업을 대기열로 되돌림')
+  .option('--state <file>', '큐 상태 파일', '.work/queue/state.json')
+  .option('--json', 'JSON으로 출력')
+  .action(async (jobId, options) => {
+    try {
+      const queue = new JobQueue({ store: new FileQueueStore(String(options.state)) });
+      const job = await queue.replay(jobId);
+      if (options.json) {
+        printJson(job);
+        return;
+      }
+      process.stdout.write(`\n↻ ${job.id} 재투입 대기 (attempts 0)\n\n`);
+    } catch (error) {
+      fail(error);
+    }
+  });
+
+/* ── hooks / telemetry ─────────────────────────────────────────────────── */
+
+program
+  .command('hooks')
+  .description('훅 A/B/C 변형 생성과 실험 결과 판정')
+  .option('--topic <text>', '영상 주제')
+  .option('--count <n>', '변형 수 (2~4)', '3')
+  .option('--weights <pairs>', '각도 가중치 (예: question=0.4,contrarian=0.3)')
+  .option('--report <file>', '웹훅 샘플 JSON으로 실험 판정')
+  .option('--experiment <id>', '실험 ID', 'exp-1')
+  .option('--metric <metric>', 'viewRate3s | retention | commentRate', 'retention')
+  .option('--window <window>', '24h | 7d', '24h')
+  .option('--min-sample <n>', '변형당 최소 표본', '200')
+  .option('--json', 'JSON으로 출력')
+  .action(async (options) => {
+    try {
+      if (options.report) {
+        const raw = await readFile(String(options.report), 'utf8');
+        const parsed = JSON.parse(raw) as unknown;
+        const samples = Array.isArray(parsed)
+          ? parsed
+          : (parsed as { samples?: unknown[] }).samples ?? [parsed];
+        const ingestor = new TelemetryIngestor();
+        const result = ingestor.ingestMany(samples);
+        const aggregates = ingestor.aggregate(String(options.experiment), options.window as '24h' | '7d');
+        const evaluation = evaluateExperiment(String(options.experiment), aggregates, {
+          metric: options.metric,
+          window: options.window,
+          minSample: Number(options.minSample),
+        });
+        if (options.json) {
+          printJson({ ingest: result, evaluation });
+          return;
+        }
+        process.stdout.write(
+          [
+            '',
+            `AB REPORT ${evaluation.experimentId} · ${evaluation.metric}/${evaluation.window}`,
+            `  판정: ${evaluation.status}${evaluation.winner ? ` · 승자 ${evaluation.winner}` : ''} · 신뢰도 ${(evaluation.confidence * 100).toFixed(1)}%`,
+            ...evaluation.variants.map(
+              (variant) =>
+                `  ${variant.variantId}  ${(variant.value * 100).toFixed(1).padStart(5)}%  n=${String(variant.trials).padStart(6)}  lift ${(variant.lift * 100).toFixed(1).padStart(6)}%  p ${variant.pValue.toFixed(3)}`,
+            ),
+            `  변형당 필요 표본: ${evaluation.requiredSample}`,
+            evaluation.notes.length ? `  ⚠ ${evaluation.notes.join(' / ')}` : '',
+            '',
+          ].join('\n'),
+        );
+        return;
+      }
+
+      if (!options.topic) {
+        throw new ShortformError('--topic 또는 --report 가 필요합니다', { code: 'VALIDATION' });
+      }
+      const weights = options.weights
+        ? Object.fromEntries(
+            String(options.weights)
+              .split(',')
+              .map((pair) => pair.split('='))
+              .filter(([angle, weight]) => angle && weight)
+              .map(([angle, weight]) => [angle.trim(), Number(weight)]),
+          )
+        : undefined;
+      const variants = generateHookVariants(String(options.topic), {
+        count: Number(options.count),
+        weights: weights as Partial<Record<HookAngle, number>> | undefined,
+      });
+      if (options.json) {
+        printJson(variants);
+        return;
+      }
+      process.stdout.write(
+        [
+          '',
+          `HOOKS · ${options.topic}`,
+          ...variants.map(
+            (variant) =>
+              `  ${variant.id} [${variant.angle.padEnd(10)}] ${variant.hookSeconds.toFixed(2)}s  ${variant.text}`,
+          ),
+          '',
+        ].join('\n'),
+      );
+    } catch (error) {
+      fail(error);
+    }
+  });
+
+/* ── slots ─────────────────────────────────────────────────────────────── */
+
+program
+  .command('slots')
+  .description('플랫폼 섀도우밴 방지를 위한 지터 분산 발행 슬롯 계산')
+  .requiredOption('--count <n>', '발행 횟수')
+  .option('--start <HH:MM>', '창 시작 (오늘 기준)', '09:00')
+  .option('--end <HH:MM>', '창 종료 (오늘 기준)', '23:00')
+  .option('--min-gap <min>', '최소 간격(분)', '60')
+  .option('--json', 'JSON으로 출력')
+  .action((options) => {
+    try {
+      const base = new Date();
+      const [startHour, startMinute] = String(options.start).split(':').map(Number);
+      const [endHour, endMinute] = String(options.end).split(':').map(Number);
+      const start = new Date(base);
+      start.setHours(startHour, startMinute, 0, 0);
+      const end = new Date(base);
+      end.setHours(endHour, endMinute, 0, 0);
+      const slots = planPublishSlots({
+        count: Number(options.count),
+        windowStartMs: start.getTime(),
+        windowEndMs: end.getTime(),
+        minGapMs: Number(options.minGap) * 60_000,
+      });
+      const stats = gapStatistics(slots);
+      if (options.json) {
+        printJson({ slots, stats });
+        return;
+      }
+      process.stdout.write(
+        [
+          '',
+          `발행 슬롯 ${slots.length}건 · ${options.start}~${options.end} · 최소 ${options.minGap}분`,
+          ...slots.map(
+            (slot) =>
+              `  ${String(slot.index + 1).padStart(2)}. ${new Date(slot.atMs).toTimeString().slice(0, 8)}  (+${Math.round(slot.gapVsPrevMs / 60_000)}분)`,
+          ),
+          `  간격 평균 ${Math.round(stats.meanGapMs / 60_000)}분 · 표준편차 ${Math.round(stats.stdevGapMs / 60_000)}분 · 규칙성 ${stats.spreadRatio}`,
+          '',
+        ].join('\n'),
+      );
+    } catch (error) {
+      fail(error);
+    }
+  });
+
+/* ── studio ────────────────────────────────────────────────────────────── */
+
+program
+  .command('studio')
+  .description('B2B 스튜디오 모니터링 콘솔 (큐 · 워커 · 쿼터 · OAuth · 훅 A/B)')
+  .option('--state <file>', '큐 상태 파일 (없으면 내장 데모 상태)')
+  .option('--html <file>', 'HTML 대시보드 저장 경로')
+  .option('--json', 'JSON 스냅샷으로 출력')
+  .action(async (options) => {
+    try {
+      let console: StudioConsole;
+      if (options.state) {
+        const queue = new JobQueue({ store: new FileQueueStore(String(options.state)) });
+        console = new StudioConsole({
+          queue,
+          tenants: (() => {
+            const registry = new TenantRegistry();
+            registry.register({ id: 'studio-demo', name: 'Studio Demo', plan: 'starter' });
+            return registry;
+          })(),
+        });
+      } else {
+        console = (await createDemoStudio()).console;
+      }
+      const snapshot = await console.snapshot();
+      if (options.html) {
+        await writeFile(String(options.html), console.renderHtml(snapshot), 'utf8');
+      }
+      if (options.json) {
+        printJson(snapshot);
+        return;
+      }
+      process.stdout.write(console.renderText(snapshot));
+      if (options.html) process.stdout.write(`\nHTML dashboard: ${options.html}\n`);
+      process.stdout.write('\n');
     } catch (error) {
       fail(error);
     }

@@ -54,4 +54,103 @@ export { createApproval, assertApproval, computeContentHash, subjectFromScript }
 export { buildEpisode, loadProject, renderProject } from './pipeline';
 export type { Episode, EpisodeArtifacts, BuildEpisodeOptions } from './pipeline';
 
+/* Distributed render queue */
+export {
+  JobQueue,
+  InMemoryQueueStore,
+  FileQueueStore,
+  WorkerPool,
+  BinaryHeap,
+  computeRetryDelay,
+  maxRetryBudgetMs,
+  planRenderChunks,
+  totalChunkWeight,
+  createSimulatedRenderHandler,
+  createProjectRenderHandler,
+} from './lib/queue';
+export type {
+  QueueStore,
+  JobQueueOptions,
+  FailOptions,
+  WorkerContext,
+  JobHandler,
+  WorkerLoad,
+  WorkerPoolOptions,
+  PoolSummary,
+  SimulatedRenderOptions,
+  ProjectRenderResult,
+} from './lib/queue';
+
+/* Rate limiting, tenant isolation and OAuth rotation */
+export {
+  RateLimitBucket,
+  DailyQuota,
+  TenantRegistry,
+  PROVIDER_PROFILES,
+  PLAN_HEADROOM,
+  OAuthTokenRotator,
+  OAuthRefreshError,
+  PROVIDER_OF,
+  planPublishSlots,
+  gapStatistics,
+  jitteredDelay,
+} from './lib/rateLimit';
+export type {
+  RateLimitBucketOptions,
+  BucketSnapshot,
+  ConsumeDecision,
+  ProviderId,
+  TenantPlan,
+  TenantLimitView,
+  LimitDecision,
+  TokenLease,
+  CredentialSnapshot,
+  TokenRefresher,
+  PublishSlot,
+  GapStatistics,
+} from './lib/rateLimit';
+
+/* Hook A/B testing and telemetry */
+export {
+  HOOK_TEMPLATES,
+  HOOK_SECONDS_CEILING,
+  generateHookVariants,
+  assignVariant,
+  bucketOf,
+  assignmentSpread,
+  TelemetryIngestor,
+  deriveMetrics,
+  evaluateExperiment,
+  twoProportionZTest,
+  wilsonInterval,
+  requiredSampleSize,
+  normalCdf,
+  normalQuantile,
+  erf,
+  HookFeedbackLoop,
+} from './lib/telemetry';
+export type {
+  HookTemplate,
+  GenerateHooksOptions,
+  IngestResult,
+  EvaluateOptions,
+  ProportionTest,
+  AngleStats,
+  HookFeedbackOptions,
+} from './lib/telemetry';
+
+/* B2B studio console and read API */
+export { StudioConsole, StudioApi, createDemoStudio, variantById } from './services/studio';
+export type {
+  StudioSnapshot,
+  StudioQueueView,
+  StudioWorkerView,
+  StudioExperimentView,
+  StudioDlqEntry,
+  StudioExperimentConfig,
+  StudioApiRequest,
+  StudioApiResponse,
+  DemoStudio,
+} from './services/studio';
+
 export * from './types';
