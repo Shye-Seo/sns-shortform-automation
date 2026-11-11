@@ -1,5 +1,7 @@
 # shortform-engine
 
+[![CI](https://github.com/Shye-Seo/sns-shortform-automation/actions/workflows/ci.yml/badge.svg)](https://github.com/Shye-Seo/sns-shortform-automation/actions/workflows/ci.yml)
+
 **숏폼 제작 파이프라인을, 대행사가 30명의 계정을 굴릴 수 있는 B2B 배포 플랫폼으로.**
 
 한 편의 60초 영상을 만드는 것(대본 → 자막 → 더킹 → 9:16 인코딩 → 게시)과,
