@@ -521,19 +521,23 @@ npm run coverage  # 84.3% statements · 79.7% branches
 
 | 항목 | 상태 |
 |------|------|
-| 큐 상태머신·재시도·DLQ·lease | ✅ 구현·테스트 (단일 프로세스) |
-| Redis/Postgres 어댑터 | ⚠️ `QueueStore` 인터페이스만. 실제 어댑터 미구현 |
-| 멀티 노드 원자성 | ⚠️ `reserve`는 프로세스 내 원자성만. Redis는 Lua 필요 |
+| 큐 상태머신·재시도·DLQ·lease | ✅ 구현·테스트 (MySQL 8.0 `SKIP LOCKED` 기반 분산 큐 및 단일 프로세스 메모리 큐) |
+| MySQL 영속 큐 & PHP 백엔드 | ✅ Modern PHP 8.2 OOP + MySQL 8.0 DDL/ERD 7개 테이블 구현·테스트 |
+| 웹훅 수신 & 서명 검증 | ✅ Meta Graph API `X-Hub-Signature-256` HMAC-SHA256 (`hash_equals`) 보안 검증 미들웨어 구현·테스트 |
+| DLQ 콘솔 UI | ✅ 웹 콘솔 DLQ 재시도 및 폐기 인터페이스 (`POST /v1/queue/dlq/{id}/retry|discard`) 구현·테스트 |
 | 토큰 버킷·일일 쿼터·격리 | ✅ 구현·테스트 |
-| 실계정 429/쿼터 재현 | ⚠️ 프로토콜·헤더 파싱 구현, 실제 429 재현 미실시 |
 | OAuth single-flight·로테이션 | ✅ 구현·테스트 (주입 리프레셔, 실 토큰 엔드포인트 미호출) |
 | 지터 스케줄 | ✅ 계획·통계 검증. 실제 발행과의 상관 미측정 |
 | A/B 통계 | ✅ 구현·테스트. 실제 플랫폼 웹훅 연동은 스키마 수신 단계 |
-| 콘솔/API | ✅ text·HTML·Prometheus·JSON. 인증 계층 미구현 |
+| 콘솔/API | ✅ text·HTML·Prometheus·JSON 서빙 및 DLQ 액션 API 연동 |
 | 60초 렌더 파이프라인 | ✅ ffmpeg 6.0 실제 인코딩·프리플라이트 통과 |
 
-**로드맵**: Redis 큐 어댑터 → 워커 컨테이너 분리 → 실계정 429 관측으로 버킷 보정 →
-웹훅 수신(서명 검증) → 실험 대시보드 시계열.
+**로드맵**:
+- [x] MySQL 8.0 `SKIP LOCKED` 기반 분산 비동기 렌더 큐 백엔드 (PHP 8.2)
+- [x] Meta Graph API 웹훅 HMAC-SHA256 서명 보안 검증 미들웨어
+- [x] Dead Letter Queue (DLQ) 원클릭 재시도 및 폐기 콘솔 UI
+- [ ] Redis 큐 어댑터 (BullMQ 연동 및 Lua 스크립트 기반 원자성 보장)
+- [ ] 실시간 렌더링 큐 시계열 메트릭 대시보드 (분당 처리량, 실패율 시각화)
 
 
 ---
