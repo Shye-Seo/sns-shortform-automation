@@ -203,3 +203,34 @@ stateDiagram-v2
 - 새 TTS: `TtsProvider` 구현 후 `createTtsProvider`에 등록
 - 새 대본 모델: `ScriptModel` 구현 (프롬프트는 `buildScriptPrompt`)
 - 자동화: `buildEpisode` / `renderProject` / `publishPayload`를 스케줄러에서 직접 호출
+
+## 6. 2세대: 분산 배포 계층
+
+1세대는 한 편을 만드는 파이프라인이었습니다. 2세대는 그 작업을 **여러 테넌트·여러 편**으로
+확장하기 위한 계층이고, 상세 명세는
+[distributed-video-pipeline-spec.md](./distributed-video-pipeline-spec.md)에 있습니다.
+
+```mermaid
+flowchart LR
+    A[Studio API / CLI] --> Q[JobQueue<br/>priority · retry · DLQ]
+    Q --> P[WorkerPool<br/>lease · progress]
+    P --> R[renderProject]
+    P --> T[TenantRegistry<br/>bucket + quota]
+    T --> O[OAuthTokenRotator<br/>single-flight]
+    P --> E[Telemetry / A-B]
+    Q --> C[StudioConsole]
+    E --> C
+```
+
+| 모듈 | 책임 | 경계 |
+|------|------|------|
+| `lib/queue/jobQueue` | 상태머신·우선순위·백오프·lease·DLQ·멱등 | `QueueStore` 인터페이스 뒤에 저장소를 숨김 |
+| `lib/queue/workerPool` | 고정 동시성·진행률·드레인/상시 | 큐 상태를 들고 있지 않음 |
+| `lib/queue/renderJob` | 청크 계획·시뮬레이션 핸들러·실 렌더 브리지 | `renderProject`를 주입받아 ffmpeg 의존 없음 |
+| `lib/rateLimit/*` | 버킷·일일 쿼터·테넌트 격리·OAuth·지터 슬롯 | 테넌트별 런타임, 전역 상태 없음 |
+| `lib/telemetry/*` | 훅 생성·멱등 수집·집계·검정·피드백 | 통계는 순수 함수 |
+| `services/studio/*` | 콘솔 스냅샷·HTML·Prometheus·읽기 API | 읽기 전용, 변경은 CLI |
+
+이 계층을 추가하면서 1세대 코드는 바꾸지 않았습니다. `renderProject`와 `publishPayload`는
+그대로이고, 큐의 핸들러가 그 함수를 호출할 뿐입니다. **교체 가능한 경계**를 지키는 것이
+2세대 작업의 실제 내용이었습니다.

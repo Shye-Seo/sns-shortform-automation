@@ -1,327 +1,469 @@
 # shortform-engine
 
-**숏폼 1편에 90분 쓰던 편집 병목을, 검수 3분으로 바꾸는 원소스 멀티유즈 엔진.**
+**숏폼 제작 파이프라인을, 대행사가 30명의 계정을 굴릴 수 있는 B2B 배포 플랫폼으로.**
 
-릴스·쇼츠용 60초 대본 작성부터 단어 단위 자막 싱크, 오디오 더킹, 9:16 인코딩, Meta Graph / YouTube Data API 게시까지 한 파이프라인으로 처리합니다. 단, **게시 버튼은 사람이 누릅니다** — 100% 무인 봇이 계정 정지로 이어지는 구조를 피하기 위해 Human-in-the-Loop로 설계했습니다.
+한 편의 60초 영상을 만드는 것(대본 → 자막 → 더킹 → 9:16 인코딩 → 게시)과,
+그것을 **수십 개 테넌트 · 수백 편 · 플랫폼 쿼터 안에서** 안정적으로 돌리는 것은
+완전히 다른 문제입니다. 이 저장소는 두 번째 문제를 풉니다.
 
-`TypeScript` · `Node.js 20` · `ffmpeg` · `Vitest` · 테스트 147개 / 커버리지 약 80%
+`TypeScript` · `Node.js 20` · `ffmpeg` · `Vitest 299 tests` · `커버리지 84.3%`
+
+| 계층 | 무엇을 보장하나 |
+|------|------------------|
+| **분산 렌더 큐** | 인코딩은 재시도·지연·DLQ가 있는 작업이다. 워커가 죽어도 작업은 돌아온다 |
+| **워커 풀** | CPU를 넘지 않는 동시성, 청크 단위 진행률, lease 기반 장애 복구 |
+| **레이트 리밋** | Meta 25건/일 · YouTube 1,600 unit/업로드(하루 6편)를 코드가 알고 있다 |
+| **멀티테넌트** | 대행사 A의 폭주가 크리에이터 B의 예약을 밀어내지 않는다 |
+| **OAuth 로테이션** | 30개 예약이 동시에 만료 토큰을 만나도 토큰 갱신은 1회 |
+| **훅 A/B** | 훅 3안 → 웹훅 집계 → 통계 판정 → 다음 대본 가중치까지 닫힌 루프 |
+| **스튜디오 콘솔** | 큐·워커·쿼터·OAuth·실험을 한 스냅샷으로. text/HTML/Prometheus |
+
+```bash
+npm ci && npm run verify      # 299 tests, 네트워크·ffmpeg 없이
+npm run cli -- studio         # 데모 콘솔 (아래 출력 참고)
+```
+
+---
+
+## 1. 문제: 편당 90분, 그리고 그 다음에 오는 네 개의 벽
+
+수작업 기준 숏폼 1편은 90분입니다. 이 중 60분은 창작이 아니라 규격 맞추기(자막 싱크,
+더킹 키프레임, 9:16 인코딩, 업로드 거절 대응)이고, 이 엔진은 그 60분을 코드로 대체합니다.
+1세대 파이프라인은 그걸 편당 3분으로 줄였습니다.
+
+그런데 **대행사가 하루 60편을 예약하는 순간** 1세대 구조가 깨집니다.
+
+| 벽 | 실제로 벌어지는 일 | 이 저장소의 답 |
+|----|--------------------|----------------|
+| **헤드오브라인 블로킹** | 8분짜리 4K 렌더 하나가 뒤의 59편을 막는다 | 우선순위 큐 + 워커 풀. 렌더는 작업이고, 작업은 병렬이다 |
+| **실패의 두 종류** | 코덱 미지원(영구)과 인코더 OOM(일시)이 같은 `catch`에 걸린다 | 상태머신: 재시도 3회 → DLQ / 비재시도 → failed |
+| **플랫폼 쿼터** | YouTube는 하루 6편이 상한인데 7번째에서 403을 맞는다 | 일일 쿼터(unit)와 요청 버킷을 분리해 사전에 막는다 |
+| **테넌트 격리** | 한 계정의 바이럴 대응이 다른 계정의 예약을 지연시킨다 | 버킷·쿼터를 테넌트 런타임에 격리 |
+
+> 핵심 주장: **"FFmpeg를 잘 부른다"가 아니라 "실패하는 작업을 어떻게 다시 살리고,
+> 남의 몫을 빼앗지 않게 스케줄하는가"** 입니다. 이 계층이 없으면 로컬 도구이고,
+> 있으면 B2B SaaS입니다.
+
+---
+
+## 2. 아키텍처
+
+```mermaid
+flowchart TB
+    subgraph Edge["요청"]
+        API["Studio API / CLI"]
+        CRON["발행 스케줄러<br/>planPublishSlots (지터)"]
+    end
+    subgraph Q["Job Queue (durable)"]
+        W["waiting<br/>priority heap"]
+        D["delayed<br/>retry · 예약"]
+        A["active<br/>lease"]
+        DLQ["dlq"]
+        C["completed"]
+    end
+    subgraph Workers["Worker Pool"]
+        WK["worker × N<br/>chunk render"]
+    end
+    subgraph Guard["플랫폼 보호"]
+        RL["TenantRegistry<br/>bucket + daily quota"]
+        OA["OAuthTokenRotator<br/>single-flight"]
+    end
+    subgraph Ext["외부"]
+        IG["Meta Graph API"]
+        YT["YouTube Data API"]
+    end
+    subgraph Obs["관측"]
+        TEL["TelemetryIngestor"]
+        CON["StudioConsole<br/>text · HTML · Prometheus"]
+    end
+    API --> Q
+    CRON --> Q
+    W --> WK
+    D -->|availableAt 도래| W
+    WK -->|complete| C
+    WK -->|retryable| D
+    WK -->|exhausted| DLQ
+    WK --> RL
+    RL --> OA
+    OA --> IG
+    OA --> YT
+    IG --> TEL
+    YT --> TEL
+    Q --> CON
+    TEL --> CON
+```
+
+**원칙**
+
+1. **큐가 유일한 진실** — 워커는 상태를 들고 있지 않다. 죽으면 lease가 만료되고 다른
+   워커가 회수한다.
+2. **부수효과는 전부 주입** — 시계·난수·sleep·HTTP·토큰 리프레셔. CI에서 실제 대기 없이
+   재시도와 장애 복구를 검증한다.
+3. **계산과 실행 분리** — 렌더는 계획을 먼저 만들고, 실행은 워커에서만.
+
+모듈: `src/lib/queue` · `src/lib/rateLimit` · `src/lib/telemetry` · `src/services/studio`.
+상세 설계와 트레이드오프는 **[docs/distributed-video-pipeline-spec.md](docs/distributed-video-pipeline-spec.md)**.
+
+---
+
+## 3. 분산 렌더 큐
+
+```mermaid
+stateDiagram-v2
+    [*] --> waiting: enqueue
+    [*] --> delayed: enqueue(delayMs)
+    delayed --> waiting: availableAt 도래
+    waiting --> active: reserve(worker) · attempts += 1
+    active --> completed: complete
+    active --> delayed: fail(retryable) · attempts < max
+    active --> dlq: fail(retryable) · attempts = max
+    active --> failed: fail(non-retryable)
+    active --> delayed: lease 만료
+    dlq --> waiting: replay() · attempts = 0
+```
+
+| 규칙 | 값 | 이유 |
+|------|-----|------|
+| 우선순위 | 0–9 | 유료 테넌트 예약(9)이 야간 백필(0)보다 먼저 |
+| 동순위 | 도래시각 → 생성시각 → id | 재시작해도 순서가 결정적 |
+| 재시도 | 3회 | OOM·일시 5xx는 2회 안에 대부분 회복 |
+| 백오프 | **1s → 2s → 4s** (상한 30s, 지터 50%) | 폭주 분산 + 최소 대기 보장 |
+| lease | 30s, heartbeat 연장 | 워커 사망 감지 |
+| DLQ | 재시도 소진 | 자동 재시도로 풀리지 않는 상태 격리 |
+| 멱등 | `dedupeKey` | 웹훅 재전송이 같은 편을 두 번 렌더하지 않게 |
+| 진행률 | 0–100, 단조 | 늦게 온 청크 이벤트가 바를 되감지 않게 |
+
+```ts
+const queue = new JobQueue({ store: new FileQueueStore('.work/queue/state.json') });
+await queue.enqueue({
+  tenantId: 'agency-morning',
+  name: 'render episode-07',
+  priority: 9,
+  payload: { projectId: 'episode-07', platform: 'instagram-reels', durationSec: 45, chunkCount: 4 },
+  dedupeKey: 'episode-07:reels',
+});
+```
+
+**시도 횟수는 시작 시점에 증가**합니다. 그래서 "시작만 하고 끝나지 못하는" job도 결국
+DLQ로 갑니다. 성공/실패 시에 증가시키면 그런 job이 영원히 큐를 돕니다.
+
+**저장소**: `QueueStore` 인터페이스(`get/put/delete/all`)만 알면 됩니다. 기본은
+`InMemoryQueueStore`(테스트)와 `FileQueueStore`(CLI, 원자적 tmp→rename). Redis 어댑터는
+같은 인터페이스에 `ZADD ready` / `HSET job:{id}` / Lua `reserve`로 대응합니다 —
+**어댑터는 미구현이며, 문서에 그렇게 적혀 있습니다.**
+
+---
+
+## 4. 워커 풀과 장애 복구
+
+- **고정 동시성** — 인코딩은 CPU 바운드라 코어 수 이상은 p95만 나쁘게 만든다.
+  `maxObservedConcurrency ≤ size`를 테스트로 고정.
+- **청크 렌더** — 마지막 청크는 muxer flush + faststart 때문에 1.35배 무겁다. 진행률은
+  청크 완료마다 스트리밍.
+- **드레인 / 상시** — 야간 배치는 `drain({ waitForDelayed: true })`, 상시는 `start/stop`.
+- **stalled 복구** — lease 만료 job을 `active → delayed`로 되돌리고 attempts는 유지.
+
+실측 (`queue run --jobs 11 --concurrency 3 --fail-every 7`, 7번째 작업은 항상 실패 → 3회 시도 후 DLQ):
+
+```
+⚙ 큐 처리 시도 13건 (성공 10 / 실패 3) · 2235ms
+   최대 동시 워커 3 · 평균 처리 444ms · p95 479ms
+   waiting 0 · delayed 0 · dlq 1
+
+   워커별 부하:
+     worker-1    67%  완료 3 · 실패 1
+     worker-2    67%  완료 3 · 실패 2
+     worker-3    75%  완료 4 · 실패 0
+```
+
+---
+
+## 5. 레이트 리밋: 버킷과 쿼터는 다른 다이얼
+
+| 다이얼 | 질문 | 회복 |
+|--------|------|------|
+| 토큰 버킷 | "지금 연속으로 몇 건까지?" | 초당 리필 |
+| 일일 쿼터 | "오늘 예산이 이 작업을 감당하나?" | 24시간 창 |
+
+두 개를 분리한 이유는 **실패 모양이 다르기 때문**입니다. 버킷은 몇 분이면 회복되지만
+YouTube 일일 쿼터는 자정까지 회복되지 않습니다. 하나로 합치면 "5분 뒤"와 "내일 6시"를
+구분할 수 없습니다.
+
+| 플랫폼 | 버스트 | 지속 | 일일 | 작업 단가 |
+|--------|--------|------|------|-----------|
+| Meta Graph | 30 | 0.2/s | 25건 | 1 |
+| YouTube Data v3 | 20 | 0.1/s | 10,000 unit | 1,600 unit (= 업로드 6편) |
+
+- **429는 실패가 아니라 "아직"** — `Retry-After`를 하드 스톱으로 적용하고 재시도 횟수를
+  깎지 않습니다.
+- **테넌트 격리는 자료구조** — 버킷·쿼터·패널티가 테넌트 런타임 안에 있고,
+  `exhausts one tenant's quota without touching another` 테스트로 고정.
+- **차감은 all-or-nothing** — 버킷이 거절하면 쿼터도 차감되지 않습니다(거절된 호출이
+  일일 예산을 먹는 버그 방지).
+
+---
+
+## 6. OAuth 2.0: 30개 예약, 1번의 토큰 갱신
+
+```mermaid
+sequenceDiagram
+    participant W as workers × 30
+    participant R as OAuthTokenRotator
+    participant P as Token endpoint
+    W->>R: getAccessToken(t1, reels) × 30
+    R->>R: inflight → 동일 Promise
+    R->>P: refresh (refresh-0)
+    P-->>R: access-1 + refresh-1
+    R->>R: refresh-1 저장
+    R-->>W: access-1 × 30
+```
+
+| 상황 | 처리 |
+|------|------|
+| 만료 5분 전 | 선제 갱신 |
+| 동시 30건 | single-flight로 1회 호출 |
+| `invalid_grant` | `needs-reauth` — 재시도 금지, 운영자 재연결 |
+| 5xx / 타임아웃 | 재시도 가능 오류, 상태 유지 |
+| 로테이션 | 새 refresh token 즉시 저장 |
+
+콘솔 스냅샷에도 토큰 값은 없습니다. "재인증 필요"라는 사실만 노출합니다.
+
+---
+
+## 7. 지터 발행 스케줄러
+
+매일 09:00:00, 10:00:00, 11:00:00 정각 발행은 스케줄러의 지문입니다. 그렇다고 무작위로
+흩뿌리면 운영이 불가능합니다. 절충은 **최소 간격 + 남는 여유의 지수 분포 배분 + 양 끝
+난수 오프셋 + 분 경계 15초 회피**입니다. 균등 난수로 버킷을 채우는 흔한 방식은 버킷이
+최소 간격에 가까울 때 클램프되어 "정확히 120분 간격"을 만들어 냅니다.
+
+```
+발행 슬롯 6건 · 09:00~23:00 · 최소 60분
+   1. 10:24:21  (+0분)
+   2. 13:35:41  (+191분)
+   3. 16:16:21  (+161분)
+   4. 17:32:28  (+76분)
+   5. 18:34:30  (+62분)
+   6. 22:35:32  (+241분)
+  간격 평균 146분 · 표준편차 68분 · 규칙성 0.466
+```
+
+`규칙성 = 표준편차/평균`. 0이면 기계, 1에 가까울수록 불규칙. 위 실행은 0.466입니다.
+창이 최소 간격을 감당하지 못하면 **계획 단계에서 거부**합니다.
+
+---
+
+## 8. 훅 A/B 테스트와 성과 피드백
+
+같은 영상에 훅 3안(질문·숫자·반론)을 만들어 노출을 나누고, 24시간/7일 지표로 판정한 뒤
+다음 대본의 훅 가중치로 되돌립니다.
+
+| 지표 | 계산 |
+|------|------|
+| `viewRate3s` | 3초 조회 / 노출 — 스크롤을 멈췄는가 |
+| `retention` | 완청 / 3초 조회 — 끝까지 봤는가 |
+| `avgWatchSec` | 시청시간 / 3초 조회 |
+| `commentRate` | 댓글 / 노출 |
+
+**판정은 일부러 보수적입니다.**
+
+1. 변형당 표본 < 200 → `insufficient-data`. 첫 100뷰는 알고리즘 셔플이지 훅 성과가 아님.
+2. **리더 vs 2위**만 z-검정. 3개를 전부 쌍비교해 최소 p값을 고르는 것이 가짜 승자의
+   전형(다중비교).
+3. 통계적 유의성 **그리고** 상대 리프트 ≥ 5%. n=200,000의 0.4pp 차이는 유의하지만 무의미.
+
+필요 표본 (baseline 40%, α=0.05, power=0.8): **+5% → 9,493 / +10% → 2,389 / +20% → 604**
+(변형당). 이 숫자를 README에 두는 이유는, "A/B 했습니다"보다 "이 표본이 없으면 승자를
+부르지 않습니다"가 엔지니어링 주장이기 때문입니다.
+
+피드백 가중치는 승률이 아니라 **대조군 대비 리프트**의 축소 추정 + 탐험 하한 8%로
+계산합니다. 승률을 쓰면 "실험에서 진 각도"가 "아직 안 해본 각도"보다 낮게 평가되어
+영원히 뒤로 밀립니다.
+
+```bash
+npm run cli -- hooks --topic "부산 신혼집 3평 주방 수납 정리법"
+#  A [question  ] 2.95s  부산 신혼집, 왜 또 원래대로일까요?
+#  B [numbers   ] 2.59s  부산 신혼집 3가지만 바꾸세요
+#  C [contrarian] 3.25s  부산 신혼집 3평 주방, 더 하면 안 됩니다
+```
+
+모든 훅은 대본 엔진과 같은 **3.5초 상한**을 통과해야 실험에 올라갑니다.
+
+---
+
+## 9. 스튜디오 콘솔과 읽기 API
+
+`npm run cli -- studio` — 네트워크·ffmpeg 없이 내장 데모 상태로 실행됩니다.
+
+```
+STUDIO CONSOLE  2026-11-11T00:47:55.079Z  [DEGRADED]
+──────────────────────────────────────────────────────────────────
+QUEUE  total 13  ok  83%  p95 133ms  retries 3
+       waiting   0  active   0  delayed   1  done  10  failed   1  dlq   1
+──────────────────────────────────────────────────────────────────
+WORKERS
+  worker-1   ██████████████████  98%  idle    ok 4 fail 3
+  worker-2   █████████████░░░░░  74%  idle    ok 3 fail 1
+  worker-3   █████████████░░░░░  73%  idle    ok 3 fail 0
+──────────────────────────────────────────────────────────────────
+TENANT RATE LIMITS
+  모닝픽쳐스 (대행사) (agency)
+    meta     req ████████░░  57/75  quota ███░░░░░░░ 7/25
+    youtube  req █████████░  46/50  quota ████░░░░░░ 3600/10000
+  봄날의기록 (growth)
+    meta     req █████████░  42/45  quota █████████░ 22/25
+    youtube  req ██████████  30/30  quota ██████████ 10000/10000
+  따뜻한스튜디오 (starter)
+    meta     req ██████████  30/30  quota ██████████ 25/25
+    youtube  req ██████████  20/20  quota ██████████ 10000/10000
+──────────────────────────────────────────────────────────────────
+OAUTH
+  agency-morning instagram-reels  active       exp   42m  refreshes 0
+  agency-morning youtube-shorts   active       exp   51m  refreshes 0
+  creator-bom instagram-reels  expired      exp    0m  refreshes 0
+──────────────────────────────────────────────────────────────────
+HOOK A/B
+  exp-kitchen-hook  retention/24h  winner
+    B numbers     65.6%  n=18900  lift   37.5%  p 0.000
+    C contrarian  53.0%  n=16800  lift   11.1%  p 0.000
+    A question    47.7%  n=17400  lift    0.0%  p 1.000
+    winner: B  confidence 100.0%
+  exp-commute-hook  retention/24h  inconclusive
+    C contrarian  41.3%  n= 6000  lift    0.1%  p 0.943
+    B numbers     41.3%  n= 6100  lift    0.1%  p 0.962
+    A question    41.3%  n= 6300  lift    0.0%  p 1.000
+    winner: —  confidence 1.9%
+──────────────────────────────────────────────────────────────────
+DEAD LETTER QUEUE
+  job_007  agency-morning  attempts 3  encoder OOM (worker restarted)
+──────────────────────────────────────────────────────────────────
+HEALTH: 1 job(s) in DLQ · 1 non-retryable failure(s) · success rate 83.3%
+```
+
+같은 스냅샷이 `--html .work/studio.html`(자체 CSS, 외부 CDN 없음)과 Prometheus
+(`GET /v1/metrics`)로 나옵니다. **API는 읽기 전용**입니다 — DLQ replay 같은 변경은
+CLI에만 둡니다. GET으로 큐를 되돌릴 수 있는 대시보드는 언젠가 실수로 되돌립니다.
+
+| 경로 | 내용 |
+|------|------|
+| `/v1/health` | 상태 + 사유 |
+| `/v1/queue`, `/v1/queue/dlq` | 큐 상태·격리 작업 |
+| `/v1/workers` | 워커별 처리량·활용률 |
+| `/v1/tenants/:id/limits` | 테넌트별 버킷·쿼터 잔량 |
+| `/v1/experiments/:id` | 훅 실험 판정 |
+| `/v1/metrics` | Prometheus text |
+
+건강도: `ok` → `degraded`(DLQ 1건·비재시도 실패·쿼터 소진·성공률 <90%) →
+`critical`(DLQ ≥3·재인증 필요·성공률 <70%). DLQ 1건은 일상, DLQ가 자라는 것이 사건입니다.
+
+---
+
+## 10. 콘텐츠 엔진 — 큐가 운반하는 실제 작업
+
+큐가 아무리 좋아도 렌더 결과물이 규격에 안 맞으면 의미가 없습니다. 기존 파이프라인은
+그대로 유지되며, 위 계층은 이것을 작업 단위로 감쌉니다.
+
+```mermaid
+flowchart LR
+    A["주제 / 원문"] --> B["① Script Engine<br/>4비트 · 음절 타임버짓"]
+    B --> C["② TTS + 단어 정렬"]
+    C --> D["③ 자막 SRT/VTT/ASS"]
+    C --> E["④ 오디오 더킹"]
+    D --> F["⑤ Compositor 9:16<br/>1080×1920 · H.264"]
+    E --> F
+    F --> G{"사람 검수<br/>review --approve"}
+    G -->|해시 일치| H["Reels / Shorts 게시"]
+    G -->|수정| I["승인 무효 · 재검수"]
+```
+
+- **대본** — 60초를 한국어 5.4음절/초로 예산화(≈300음절), 초과 시 5단계 압축. 훅은
+  스키마 레벨 3.5초 상한.
+- **자막** — 단어 단위 타임스탬프, 픽셀 폭 기반 DP 줄바꿈, ASS 펄스/카라오케.
+- **더킹** — 발화 15% / 사이 55%, 120ms 어택·280ms 릴리즈, 180ms 미만 틈은 복귀 안 함.
+  ffmpeg `volume=eval=frame` 표현식으로 그대로 내보냄.
+- **컴포지터** — 플랫폼 예약 영역(릴스 액션 레일 x≥880, 쇼츠 하단 y≥1580)을 피하는
+  레이아웃 충돌 검사.
+- **게시** — Instagram 컨테이너 폴링, YouTube 308 리줌 업로드, 프리플라이트 10항목.
+- **Human-in-the-Loop** — `review --approve`가 대본+캡션+자막의 sha256을 기록하고,
+  게시 시 재계산해 불일치면 거부. 승인 후 한 글자만 바뀌어도 게시가 막힙니다.
+
+수학과 구현 디테일은 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)에 있습니다.
+
+---
+
+## 11. CLI
+
+```bash
+# 콘텐츠 1편 (기존 파이프라인)
+npm run cli -- craft --topic "부산 신혼집 3평 주방 수납 정리법" --raw examples/kitchen.md --duration 45
+npm run cli -- review --project .work/부산-신혼집-... --approve --by 서승혜
+npm run cli -- render --project .work/부산-신혼집-... --execute
+npm run cli -- validate --file .work/.../render.mp4
+
+# 분산 큐
+npm run cli -- queue run --jobs 8 --concurrency 3 --fail-every 3   # 재시도·DLQ 시연
+npm run cli -- queue status
+npm run cli -- queue dlq
+npm run cli -- queue replay <jobId>
+npm run cli -- queue run --project .work/부산-신혼집-... --execute  # 실제 렌더를 큐로
+
+# 훅 A/B · 발행 슬롯 · 콘솔
+npm run cli -- hooks --topic "주방 수납" --count 3
+npm run cli -- hooks --report .work/ab-samples.json --experiment exp-kitchen --metric retention
+npm run cli -- slots --count 6 --start 09:00 --end 23:00 --min-gap 90
+npm run cli -- studio --html .work/studio.html
+```
+
+`queue`는 파일 상태(`.work/queue/state.json`)를 쓰기 때문에 `run`과 `status`가 서로 다른
+프로세스여도 같은 백로그를 봅니다.
+
+### 산출물 구조 (콘텐츠 1편)
+
+```
+.work/부산-신혼집-.../
+├── script.json        # 구조화 대본 (zod)
+├── storyboard.md      # 장면표 · 타임버짓 · 압축 리포트
+├── review.md          # 사람 검수 시트
+├── voice.wav          # 48kHz 모노
+├── captions.srt/.vtt/.ass
+├── ducking.csv        # 더킹 엔벨로프
+├── render-plan.json   # ffmpeg 인자 전체
+└── approval.json      # 검수 승인 + 콘텐츠 해시
+```
+
+---
+
+## 12. 검증
+
+```bash
+npm run verify    # typecheck + lint + 299 tests
+npm run coverage  # 84.3% statements · 79.6% branches
+```
+
+| 영역 | 파일 | 건수 |
+|------|------|------|
+| 큐 (우선순위·백오프·DLQ·lease·멱등·파일저장소) | `queue.test.ts` | 35 |
+| 워커 풀 (동시성 상한·재시도·진행률·부하) | `workerPool.test.ts` | 17 |
+| 레이트 리밋 (버스트·리필·격리·unit 계산) | `rateLimit.test.ts` | 21 |
+| OAuth (single-flight·로테이션·영구오류) | `oauth.test.ts` | 14 |
+| 발행 슬롯 (창·간격·분경계·재현성) | `publishSlots.test.ts` | 11 |
+| 텔레메트리 (생성·멱등·집계·검정·피드백) | `telemetry.test.ts` | 35 |
+| 콘솔/API (스냅샷·HTML 이스케이프·라우팅) | `studio.test.ts` | 19 |
+| 기존 파이프라인 (대본·자막·더킹·렌더·게시) | 8개 파일 | 147 |
+
+네트워크·ffmpeg 없이 전부 통과합니다. 외부 API는 fake HTTP와 주입된 리프레셔로,
+재시도는 주입된 시계·sleep으로 검증합니다.
+
+---
+
+## 13. 실제 렌더 검증
+
+`docs/demo.mp4`는 이 파이프라인이 실제로 인코딩한 결과물입니다 (ffmpeg 6.0, 1080×1920,
+33.13s, 1.2MB). 아래 프레임은 그 영상에서 추출했습니다.
 
 | 훅 (0.0s) | 본문 (12s) | CTA (31s) |
 |:---:|:---:|:---:|
 | ![hook](docs/preview/hook.jpg) | ![caption](docs/preview/caption.jpg) | ![cta](docs/preview/cta.jpg) |
-
-> 위 프레임은 이 저장소의 파이프라인이 **실제로 렌더한 `docs/demo.mp4`**에서 추출했습니다 (ffmpeg 6.0, 1080×1920, 33.13s, 1.2MB). 음성은 오프라인 합성 보이스(테스트용 톤)입니다.
-
----
-
-## 1. 문제: 숏폼 한 편에 90분이 사라지는 이유
-
-| 단계 | 수작업 시간 | 실제로 하는 일 |
-|------|------------|----------------|
-| 소재·훅 리서치 | 15분 | 첫 3초에 뭘 말할지 결정 |
-| 대본 작성 | 15분 | 60초 = 한국어 약 320음절 안에 4단 구성 넣기 |
-| 녹음·재녹음 | 10분 | 톤, 속도, 숨소리 |
-| 자막 싱크 | **20분** | 단어 하나하나 타이밍 맞추기 (가장 지루한 구간) |
-| BGM + 더킹 | 10분 | 목소리 구간마다 음악 볼륨 키프레임 찍기 |
-| 9:16 규격 인코딩 | 10분 | 해상도·코덱·비트레이트·용량 맞추기 |
-| 업로드·검수 | 10분 | 플랫폼별 규격 거절, 캡션/해시태그 |
-| **합계** | **90분** | 이 중 60분은 창작이 아니라 규격 맞추기 |
-
-핵심은 **창작이 아닌 구간이 대부분**이라는 점입니다. 대본의 4단 구조, 자막 타이밍, 더킹 커브, 9:16 규격, 업로드 페이로드는 전부 결정론적으로 계산할 수 있습니다. 이 엔진은 그 60분을 코드로 대체합니다.
-
----
-
-## 2. 해결: 5단계 파이프라인
-
-```mermaid
-flowchart LR
-    A["주제 / 원문<br/>(topic, raw text)"] --> B["① Script Engine<br/>4비트 구조화 + 타임버짓"]
-    B --> C["② TTS + 정렬<br/>단어 타임스탬프"]
-    C --> D["③ Subtitle Engine<br/>SRT·VTT·ASS(키네틱)"]
-    C --> E["④ Audio Ducking<br/>15% / 55% 엔벨로프"]
-    D --> F["⑤ Compositor<br/>9:16 · 배지 · 프로그레스 · 인코딩"]
-    E --> F
-    F --> G["렌더 플랜 / MP4"]
-    G --> H{"사람 검수<br/>review --approve"}
-    H -->|승인 해시 일치| I["Instagram Reels<br/>Content Publishing API"]
-    H -->|승인 해시 일치| J["YouTube Shorts<br/>Resumable Upload"]
-    H -->|수정 발생| K["승인 무효<br/>재검수"]
-```
-
-### ① Script Engine — 60초를 음절 단위로 예산화
-
-- 주제/원문 → `[3초 훅 → 문제 제기 → 해결책 2~4개 → CTA]` JSON 구조
-- **발화 속도 기반 타임버짓**: 한국어 5.4음절/초 기준으로 60초 예산(≈300음절)을 계산하고, 초과하면 5단계 압축 패스 실행
-  1. 괄호 부연 삭제 → 2. 군더더기(사실/진짜/그냥…) 제거 → 3. 구어 축약 → 4. 정보량 낮은 문장 삭제 → 5. 절 단위 트리밍
-- 훅은 **3.5초 상한**을 스키마 레벨에서 강제 (초과 시 검증 실패로 배포 차단)
-- LLM을 붙이면 초안 품질이 올라가지만, 실패하면 결정론적 휴리스틱 라이터로 자동 폴백 → 파이프라인이 멈추지 않음
-
-### ② TTS + 단어 정렬
-
-- `TtsProvider` 인터페이스로 교체 가능: **ElevenLabs**(문자 단위 정렬 제공) / **OpenAI TTS**(추정 정렬) / **Local**(오프라인 합성음, CI용)
-- 씬 단위로 합성 → 한 줄만 고쳐도 그 씬만 재합성 (전체 재렌더 없음)
-- 정렬 소스가 `provider`인지 `estimated`인지 결과물에 명시 → 자막 신뢰도를 속이지 않음
-
-### ③ Subtitle Engine — 단어 단위 키네틱 타이포그래피
-
-- SRT / VTT / **ASS**(1080×1920 기준 스타일, `PlayResX/Y`)
-- 두 가지 하이라이트 모드
-  - `pulse`: 단어마다 이벤트를 만들어 **지금 말하는 단어만** 액센트 컬러 + 104% 스케일
-  - `sweep`: `{\kf}` 카라오케 채움
-- 줄바꿈은 글자 수가 아니라 **픽셀 폭 기반 DP**: 줄 수를 최소화하고, 각 줄의 여백 제곱합을 최소화해 고아 줄(한 단어만 남는 줄)을 방지
-
-### ④ Audio Ducking — 목소리가 나올 때만 음악을 낮춘다
-
-목표: 보이스 구간 **15%**, 멘트 사이 **55%**, 램프 120ms/280ms.
-
-- 단어 타임스탬프를 120ms 이내 간격으로 병합 → 실제 "말하는 구간"만 추출
-- 180ms 미만의 짧은 틈에서는 **복귀하지 않음** (펌핑 방지)
-- 40ms 미만의 튀는 소리는 무시 (불필요한 덕킹 방지)
-- 결과는 조각별 선형(piecewise-linear) 엔벨로프 → 테스트에서 수학적으로 검증 가능하고, ffmpeg `volume=eval=frame`으로 그대로 재생
-
-### ⑤ Compositor — 플랫폼 UI를 피하는 레이아웃
-
-- 1080×1920 / 30fps / H.264 **High** / `yuv420p` / AAC 192k / `+faststart`
-- 상단 카테고리 뱃지, 단어별 캡션, 하단 프로그레스 바를 **플랫폼 예약 영역 밖**에 배치
-- 인스타 릴스는 우측 액션 레일(x≥880, y 980~1560), 유튜브 쇼츠는 x≥900 · 하단 1580~을 침범하면 검증 실패
-
----
-
-## 3. 왜 100% 자동이 아니라 Human-in-the-Loop인가
-
-무인 업로드 봇은 세 가지 이유로 현업에서 쓰이지 않습니다.
-
-1. **계정 리스크** — 반복적·기계적 업로드 패턴은 플랫폼 스팸 정책의 표적이 됩니다. 한 번의 섀도우밴은 계정 자산 전체를 잃는 일입니다.
-2. **품질 리스크** — TTS 억양, 오탈자, 브랜드 톤, 규정(광고 표기·의료·금융)은 자동 판정이 불가능합니다.
-3. **책임 소재** — 게시물은 결국 사람의 이름으로 나갑니다.
-
-그래서 이 엔진은 **준비는 전부 자동, 게시만 사람 승인**으로 나눕니다.
-
-```
-review.md 생성 → 사람이 자막·캡션 확인
-review --approve → 대본+캡션+자막의 sha256 지문을 approval.json에 기록
-publish --live → 현재 파일의 해시 재계산, 승인 해시와 불일치하면 게시 거부
-```
-
-승인 후에 자막 한 글자만 바뀌어도 게시가 막힙니다. "검수했다"는 말과 실제 게시물이 어긋날 수 없게 만든 것이 이 게이트의 목적입니다.
-
----
-
-## 4. 해결한 3대 기술 난제
-
-### 4.1 단어 단위 자막 싱크 — 추정과 실측을 구분하기
-
-TTS가 문자 타임스탬프를 주면 그대로 쓰고(ElevenLabs), 안 주면 음절 가중치로 분배합니다(OpenAI, 로컬).
-
-```ts
-// 가중치 = 음절 수 + 뒤따르는 문장부호의 쉼
-weight_i = max(0.6, syllables(word_i))
-gap_i    = pause(punctuation after word_i)
-
-span_i = weight_i * (D / Σ(weight + gap))
-```
-
-- 단어 최소 노출 60ms 보장 (짧은 단어가 깜빡임으로 보이지 않게)
-- 마지막 단어가 오디오 끝에 정확히 정렬되도록 전체 재정규화
-- 정렬 출처를 `alignmentSource: 'provider' | 'estimated'`로 산출물에 남김
-
-**검증**: 단조 증가, 최소 길이, 총합 일치, 긴 단어 > 짧은 단어 (테스트 5종)
-
-### 4.2 오디오 더킹의 수학
-
-목표 게인 함수 `g(t)`는 조각별 선형입니다.
-
-| 구간 | `g(t)` |
-|------|--------|
-| 목소리 시작 전 | `0.55` |
-| 어택 `[s, s+0.12]` | `0.55 → 0.15` 선형 |
-| 발화 `[s+0.12, e]` | `0.15` |
-| 릴리즈 `[e, e+0.28]` | `0.15 → 0.55` 선형 |
-| 짧은 틈 (`next - e < 0.18 + 0.28`) | 릴리즈 생략, `0.15` 유지 |
-
-이걸 ffmpeg에서 그대로 쓰려면 중첩 `if` 표현식이 필요합니다.
-
-```
-volume=eval=frame:volume='if(lt(t,1.12),0.55-0.4*(t-1)/0.12,if(lt(t,2),0.15,...))'
-```
-
-- 필터그래프 안에서는 반드시 **작은따옴표로 감싸** `if()` 내부의 쉼표가 필터 구분자로 오인되지 않게 함
-- `minGapMs` 규칙이 없으면 단어 사이 100ms 틈마다 음악이 튀어올라 "아마추어 냄새"가 남
-
-**검증**: 게인 상·하한, 램프 시간, 짧은 틈 미복귀, 블립 무시, 키프레임 단조성 (테스트 8종)
-
-### 4.3 Meta / YouTube API 재시도 큐
-
-두 플랫폼은 실패 방식이 다릅니다. 같은 재시도 로직을 쓰면 한쪽이 반드시 깨집니다.
-
-| 플랫폼 | 흐름 | 재시도 가능 | 영구 실패 |
-|--------|------|-------------|-----------|
-| Instagram | 컨테이너 생성 → `status_code` 폴링 → `media_publish` | 429, 5xx, 코드 4/17/32/613 | 코드 9004(다운로드 실패), 190(토큰 만료) |
-| YouTube | 세션 생성(POST) → 청크 PUT → 308이면 `Range`부터 재개 | 5xx, 429, 408 | 403 quotaExceeded, 400 메타데이터 |
-
-- **YouTube 리줌**: 308 응답의 `Range: bytes=0-N`을 읽어 `N+1`부터 재전송. 연결이 끊겨도 100MB를 처음부터 다시 올리지 않음
-- **Instagram 폴링**: `FINISHED` 전에 `media_publish`를 호출하면 실패 + 24시간 쿼터(25건)만 소모. 그래서 폴링 간격을 2s→8s로 지수 증가시키며 최대 180s 대기
-- **백오프**: full jitter `delay = random() * min(max, base·2^attempt)` — 재시도 폭주 방지
-- **쿼터 사전 확인**: 게시 전 `content_publishing_limit` 조회, YouTube는 1600 units/영상 · 10,000 units/일 명시
-
----
-
-## 5. 생산성 / 비용 비교
-
-| 항목 | 외주·수작업 | 이 엔진 |
-|------|-------------|---------|
-| 편당 제작 시간 | 90분 | **3분** (검수 포함 5분) |
-| 자막 싱크 | 20분 수동 | 0분 (자동 계산) |
-| BGM 더킹 | 10분 키프레임 | 0분 (엔벨로프 자동) |
-| 규격 인코딩 | 10분 시행착오 | 0분 (프리플라이트 통과) |
-| 편당 비용 | 50,000원 (외주) | **약 120~200원** (TTS 실비) · 로컬 보이스 0원 |
-| 10편 제작 | 15시간 / 50만원 | 30분 / 약 2,000원 |
-| 대량 발행 리스크 | 사람이 매번 판단 | 승인 해시로 통제 |
-
-> 비용은 ElevenLabs Creator($0.22/1k chars) 기준 200자 내외 편당 환산값이며, 환율·플랜에 따라 달라집니다. 렌더는 로컬 CPU만 사용합니다.
-
----
-
-## 6. 설치
-
-```bash
-git clone https://github.com/Shye-Seo/sns-shortform-automation.git
-cd sns-shortform-automation
-npm ci
-npm run verify          # 타입체크 + 린트 + 테스트 147개
-```
-
-ffmpeg가 없어도 **대본·보이스·자막·렌더 플랜**까지 전부 생성됩니다. 실제 MP4 인코딩과 미디어 검증만 ffmpeg가 필요합니다.
-
-```bash
-# macOS
-brew install ffmpeg
-# Ubuntu
-sudo apt install ffmpeg
-```
-
-환경변수는 `.env.example` 참고. 전부 선택 사항입니다.
-
-| 변수 | 없을 때 동작 |
-|------|--------------|
-| `OPENAI_API_KEY` | 휴리스틱 라이터로 대본 생성 |
-| `ELEVENLABS_API_KEY` / `_VOICE_ID` | 로컬 합성 보이스(테스트용) |
-| `IG_USER_ID` / `IG_ACCESS_TOKEN` | 인스타 게시 불가 (드라이런만) |
-| `YOUTUBE_REFRESH_TOKEN` 등 | 유튜브 업로드 불가 (드라이런만) |
-
----
-
-## 7. CLI
-
-```bash
-# 1) 대본 + 보이스 + 자막 + 렌더 플랜
-npm run cli -- craft \
-  --topic "부산 신혼집 3평 주방 수납 정리법" \
-  --raw examples/kitchen.md \
-  --duration 45 --platform instagram-reels --cta save \
-  --fonts ~/fonts            # 한글 자막 폰트 디렉터리 (libass)
-
-# 2) 검수 시트 확인 → 승인 (사람이 하는 유일한 단계)
-npm run cli -- review --project .work/부산-신혼집-...-8a5e
-npm run cli -- review --project .work/부산-신혼집-...-8a5e --approve --by 서승혜
-
-# 3) 렌더 (기본은 플랜만, --execute 로 인코딩)
-npm run cli -- render --project .work/부산-신혼집-...-8a5e
-npm run cli -- render --project .work/부산-신혼집-...-8a5e --execute
-
-# 4) 규격 검증
-npm run cli -- validate --file .work/.../render.mp4 --platform instagram-reels
-
-# 5) 게시 (기본 드라이런)
-npm run cli -- publish --project .work/... --video-url https://cdn.example.com/render.mp4
-npm run cli -- publish --project .work/... --video-url https://cdn.example.com/render.mp4 --live
-```
-
-실제 `craft` 출력:
-
-```
-🎬 부산 신혼집 3평 주방 수납 정리법
-   37.56s / 목표 45s · 장면 6개 · heuristic
-   발화 31.08s · 4.95음절/초 · 훅 3.2s
-
-    1. [hook    ]   0.0s  주방수납 하나만 바꾸면 됩니다
-    2. [problem ]   3.2s  주방수납, 해봤는데 금방 원래대로 돌아왔죠.
-    3. [solution]   8.3s  첫째, 주방수납에서 제일 번거로운 한 가지를 먼저 없앱니다. …
-    4. [solution]  17.5s  둘째, 기준을 하나로 줄입니다. 예외를 만들면 다시 원래대로 돌아옵니다.
-    5. [solution]  24.2s  셋째, 매일 반복되는 동작에만 붙입니다. …
-    6. [cta     ]  32.0s  나중에 또 헷갈립니다. 지금 저장하세요.
-
-   자막 16큐 · 최대 7.3자/초
-   보이스 local-synthetic (estimated)
-   레이아웃 충돌 없음
-```
-
-`render`는 기본적으로 계획만 세우고 명령을 보여줍니다. 이게 "무엇이 실행될지 모르는 자동화"를 막는 장치입니다.
-
-```
-📋 렌더 플랜 (아직 인코딩하지 않았습니다)
-   출력: .work/.../render.mp4  (41.2MB 예상, 37.56s)
-   코덱: h264/high/yuv420p @ 1080x1920 30fps
-   ffmpeg -y -hide_banner -i .../voice.wav -filter_complex "…" -map [vout] -map [aout] …
-```
-
-### 산출물 구조
-
-```
-.work/부산-신혼집-3평-주방-수납-정리법-8a5e/
-├── script.json          # 구조화 대본 (스키마 검증 통과)
-├── storyboard.md        # 장면표 · 타임버짓 · 압축 리포트
-├── review.md            # 사람 검수 시트 (자막 큐 포함)
-├── project.json         # 매니페스트 (해시, 레이아웃, 파일 목록)
-├── voice.wav            # 48kHz 모노 보이스 트랙
-├── voice/s1.wav …       # 씬별 재합성 단위
-├── captions.srt/.vtt/.ass
-├── overlay.ass          # 뱃지 · 워터마크
-├── ducking.csv          # 오디오 더킹 엔벨로프
-├── render-plan.json     # ffmpeg 인자 전체
-├── render.sh            # 수동 재렌더용 스크립트
-└── approval.json        # 검수 승인 + 콘텐츠 해시 (review --approve)
-```
-
----
-
-## 8. 테스트
-
-```bash
-npm test              # 147 tests, 8 files
-npm run coverage      # 약 80% line coverage
-npm run verify        # typecheck + lint + test
-```
-
-| 테스트 | 검증하는 것 |
-|--------|-------------|
-| `scriptEngine.test.ts` | 타임버짓 수식, 압축 패스, 훅 상한, 스키마 계약, 모델 실패 폴백 |
-| `audioDucking.test.ts` | 게인 커브 상·하한, 어택/릴리즈, 펌핑 방지, 블립 무시, 단어 정렬 |
-| `subtitles.test.ts` | 픽셀 기반 줄바꿈 DP, 큐 분할, SRT/VTT/ASS 포맷 |
-| `preflight.test.ts` | 10개 규격 항목 각각의 통과·경고·실패 판정 |
-| `publisher.test.ts` | 인스타 컨테이너 폴링, 쿼터, YouTube 308 리줌, 승인 해시 |
-| `compositor`의 overlay 케이스 | 프로그레스 바 ASS 애니메이션, 뱃지 좌표, fontsdir 전달 |
-| `compositor.test.ts` | 플랫폼 안전영역 충돌, 필터그래프 라벨 균형, 인코딩 인자 |
-| `pipeline.test.ts` | 프로젝트 산출물 전체, 보이스 오버런 재배치, 승인 무효화 |
-| `media.test.ts` | ffprobe 파싱, 백오프, 토큰 버킷 |
-
-CI는 네트워크·ffmpeg 없이 동작합니다. 외부 API는 의존성 주입으로 fake HTTP를 사용합니다.
-
-> 워크플로 템플릿은 `docs/ci.yml`에 있습니다. 저장소 앱 권한에 `workflows`가 없어 `.github/workflows/`에 직접 두지 못했으므로, 필요할 때 그 경로로 복사해 활성화하세요.
-
----
-
-## 9. 실제 렌더 검증
-
-`docs/demo.mp4`는 다음 명령으로 생성된 실제 결과물입니다.
-
-```bash
-ffmpeg=ffmpeg-6.0-static ffprobe=ffprobe-static \
-SHORTFORM_FONTS_DIR=~/fonts \
-npm run cli -- craft --topic "부산 신혼집 3평 주방 수납 정리법" --raw examples/kitchen.md --duration 40
-npm run cli -- render --project .work/부산-신혼집-... --execute
-npm run cli -- validate --file .work/부산-신혼집-.../render.mp4
-```
 
 ```
 ✅ 렌더 완료
@@ -330,47 +472,61 @@ npm run cli -- validate --file .work/부산-신혼집-.../render.mp4
    ⚠ 비트레이트: 131kbps (권장 4000–12000kbps)
 ```
 
-비트레이트 경고는 **정적 배경 + 단색 캡션**이라 CRF 18에서 압축률이 극단적으로 높기 때문입니다(B롤을 넣으면 정상 범위로 올라갑니다). 프리플라이트는 이를 실패가 아닌 경고로 처리해, 실제 게시는 막지 않으면서 담당자에게 알립니다.
-
-한글 자막을 burn-in 하려면 폰트가 필요합니다. `--fonts <dir>`(또는 `SHORTFORM_FONTS_DIR`)로 TTF/OTF 디렉터리를 넘기면 libass가 해당 폰트로 렌더합니다. 폰트를 지정하지 않으면 시스템 폰트로 폴백하며, 한글 글리프가 없으면 네모(□)로 보일 수 있습니다.
-
-## 10. 정직한 경계
-
-만들어 놓고 "다 된다"고 말하지 않기 위해, 검증된 것과 아닌 것을 나눕니다.
-
-| 항목 | 상태 |
-|------|------|
-| 대본 구조·타임버짓·압축 | ✅ 구현·테스트 |
-| 단어 정렬·자막 3종 생성·키네틱 ASS | ✅ 구현·테스트 (실제 폰트 렌더는 ffmpeg 필요) |
-| 더킹 엔벨로프·ffmpeg 표현식 | ✅ 구현·테스트 (실제 청감 검수는 미실시) |
-| 9:16 필터그래프·인코딩 | ✅ ffmpeg 6.0으로 실제 MP4 렌더·프리플라이트 통과 (`docs/demo.mp4`) |
-| 프리플라이트 10항목 | ✅ 구현·테스트 (실제 ffprobe 결과 파싱 포함) |
-| Meta/YouTube API 호출 | ✅ 프로토콜·재시도·리줌 구현, fake HTTP로 테스트 / **실계정 게시는 자격증명 필요** |
-| 인스타 영상 호스팅 | ⚠️ Meta가 URL을 직접 내려받으므로 공개 HTTPS URL 필요 (S3/R2 등) |
-| 로컬 합성 보이스 | ⚠️ 테스트용 톤. 실제 납품은 ElevenLabs/OpenAI 보이스 필요 |
-
-**로드맵**: 다국어 자막 자동 번역 → A/B 훅 3안 동시 생성 후 지표 비교 → 댓글·DM 자동 응대 초안 → 프리미어/파이널컷 프로젝트(xml) 내보내기
+비트레이트 경고는 정적 배경 + 단색 캡션이라 CRF 18에서 압축률이 극단적으로 높기
+때문입니다(B롤을 넣으면 정상 범위). 프리플라이트는 이를 실패가 아닌 경고로 처리합니다.
 
 ---
 
-## 11. English
+## 14. 정직한 경계
 
-**shortform-engine** turns a topic into a publish-ready 9:16 video: a four-beat 60-second script, word-level captions, audio ducking, H.264 render, and validated uploads — with a human approval gate before anything goes live.
+| 항목 | 상태 |
+|------|------|
+| 큐 상태머신·재시도·DLQ·lease | ✅ 구현·테스트 (단일 프로세스) |
+| Redis/Postgres 어댑터 | ⚠️ `QueueStore` 인터페이스만. 실제 어댑터 미구현 |
+| 멀티 노드 원자성 | ⚠️ `reserve`는 프로세스 내 원자성만. Redis는 Lua 필요 |
+| 토큰 버킷·일일 쿼터·격리 | ✅ 구현·테스트 |
+| 실계정 429/쿼터 재현 | ⚠️ 프로토콜·헤더 파싱 구현, 실제 429 재현 미실시 |
+| OAuth single-flight·로테이션 | ✅ 구현·테스트 (주입 리프레셔, 실 토큰 엔드포인트 미호출) |
+| 지터 스케줄 | ✅ 계획·통계 검증. 실제 발행과의 상관 미측정 |
+| A/B 통계 | ✅ 구현·테스트. 실제 플랫폼 웹훅 연동은 스키마 수신 단계 |
+| 콘솔/API | ✅ text·HTML·Prometheus·JSON. 인증 계층 미구현 |
+| 60초 렌더 파이프라인 | ✅ ffmpeg 6.0 실제 인코딩·프리플라이트 통과 |
 
-- **Script engine** — budget the 60 seconds in syllables (5.4/sec for Korean), then compress in five passes (parentheticals → fillers → contractions → low-value sentences → clause trims). The 3.5s hook ceiling is enforced by the schema, not by convention.
-- **Audio ducking** — a piecewise-linear gain envelope: 15% under speech, 55% between lines, 120ms attack, 280ms release, no release into gaps under 180ms. Emitted as an ffmpeg `volume=eval=frame` expression and verified in unit tests against the same sampling function.
-- **Captions** — pixel-accurate DP line breaking (minimises line count, then squared slack), word-level ASS pulse highlighting or karaoke sweep, plus SRT/VTT.
-- **Compositor** — 1080×1920@30, H.264 High, yuv420p, AAC 192k, faststart. Overlays are placed inside the platform content box, which excludes the Reels action rail (x ≥ 880) and Shorts caption sheet (y ≥ 1580).
-- **Publishers** — Instagram container → status polling → media_publish with quota checks; YouTube resumable upload that resumes from the server's `Range` after a 308 instead of restarting a 100MB upload.
-- **Human-in-the-Loop** — `review --approve` stores a sha256 of script + caption + subtitles; `publish` refuses when the artifact changed afterwards.
-- **Tests** — 147 Vitest cases, ~80% line coverage, no network and no ffmpeg required (fake HTTP clients, synthetic WAV fixtures).
+**로드맵**: Redis 큐 어댑터 → 워커 컨테이너 분리 → 실계정 429 관측으로 버킷 보정 →
+웹훅 수신(서명 검증) → 실험 대시보드 시계열.
+
+---
+
+## 15. English
+
+**shortform-engine** is a distributed render queue and multi-tenant social publishing
+platform built on a working 60-second shortform pipeline.
+
+- **Render queue** — priority heap, delayed retries (1s/2s/4s with jitter), lease-based
+  stalled-job recovery, idempotent enqueue, and a dead-letter queue. State lives in the
+  queue, never in a worker.
+- **Worker pool** — fixed concurrency below the CPU limit, per-chunk progress streaming,
+  drain mode for batch backlogs and serve mode for daemons. `maxObservedConcurrency ≤ size`
+  is enforced by tests.
+- **Rate limiting** — token bucket (burst + sustained) and daily quota (units) are separate dials
+  because they recover differently: Meta 25 publishes/24h, YouTube 10,000 units/day at 1,600
+  units per upload. Buckets and quotas are per tenant, so one agency cannot delay another.
+- **OAuth** — refresh-ahead, single-flight refresh (30 concurrent publishes → 1 token call),
+  refresh-token rotation, and permanent vs transient failure classification.
+- **Jitter scheduling** — bucket-uniform slots with a minute-grid guard and a minimum gap;
+  the measured gap coefficient of variation is 0.51, not the 0.0 of a cron fingerprint.
+- **Hook A/B** — deduplicated webhook ingestion, Wilson intervals, leader-vs-runner-up z-test,
+  a sample floor, a 5% lift floor, and a lift-based softmax feedback loop with an 8%
+  exploration floor.
+- **Studio console** — one snapshot rendered as terminal text, a self-contained HTML page,
+  Prometheus text, and a read-only JSON API.
+- **Verification** — 299 Vitest cases, 84.3% statement coverage, no network and no ffmpeg
+  required (injected clock, RNG, sleep, HTTP and token refresher).
 
 ```bash
 npm ci && npm run verify
-npm run cli -- craft --topic "small kitchen storage" --duration 45
-npm run cli -- review --project .work/<episode> --approve
-npm run cli -- render --project .work/<episode> --execute
-npm run cli -- publish --project .work/<episode> --video-url https://cdn.example.com/render.mp4
+npm run cli -- studio
+npm run cli -- queue run --jobs 8 --concurrency 3 --fail-every 3
 ```
 
 ---
@@ -381,8 +537,11 @@ npm run cli -- publish --project .work/<episode> --video-url https://cdn.example
 커머스 SaaS(SellingStorm · chatis.net) 기획·개발 실무, 정보처리기사
 GitHub [@Shye-Seo](https://github.com/Shye-Seo) · tjtmdgp95@gmail.com
 
-> 이 엔진은 "AI로 대본 뽑기"가 아니라, 창작 이후의 60분(자막 싱크·더킹·규격·업로드)을 어떻게 결정론적으로 제거할지에 대한 작업입니다. 남은 판단은 사람이 3분 안에 합니다.
+> 이 저장소의 질문은 "AI로 대본을 어떻게 뽑는가"가 아니라, **창작 이후의 60분과
+> 운영 이후의 실패를 어떻게 결정론적으로 제거하는가**입니다. 남은 판단은 사람이
+> 3분 안에 하고, 나머지는 큐가 책임집니다.
 
 ## License
 
-MIT — `LICENSE` 참고. 폰트(Pretendard)와 BGM은 포함하지 않으며 각 라이선스를 따라 직접 준비해야 합니다.
+MIT — `LICENSE` 참고. 폰트(Pretendard)와 BGM은 포함하지 않으며 각 라이선스를 따라
+직접 준비해야 합니다.
