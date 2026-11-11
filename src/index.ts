@@ -160,6 +160,25 @@ export type {
   HookFeedbackOptions,
 } from './lib/telemetry';
 
+/* Queue time-series metrics (throughput, failure rate, rate-limit tokens) */
+export {
+  MetricsTimeSeries,
+  buildMetricsChart,
+  downsample,
+  rateLimitReadings,
+  renderMetricsTimeSeriesSvg,
+  sparkline,
+} from './studio/metricsTimeSeries';
+export type {
+  MetricsChart,
+  MetricsChartOptions,
+  MetricsPoint,
+  MetricsSampleInput,
+  MetricsSeriesView,
+  MetricsTimeSeriesOptions,
+  RateLimitReading,
+} from './studio/metricsTimeSeries';
+
 /* B2B studio console and read API */
 export { StudioConsole, StudioApi, createDemoStudio, variantById } from './services/studio';
 export type {

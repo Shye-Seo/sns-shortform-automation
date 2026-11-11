@@ -7,6 +7,7 @@ import { TenantRegistry } from '../../lib/rateLimit/tenantRegistry';
 import { generateHookVariants } from '../../lib/telemetry/hooks';
 import { TelemetryIngestor } from '../../lib/telemetry/metrics';
 import type { Experiment, HookVariant, MetricWindow } from '../../types/telemetry';
+import { MetricsTimeSeries, rateLimitReadings } from '../../studio/metricsTimeSeries';
 import { StudioConsole } from './console';
 import { DlqActionService } from './dlqActions';
 
@@ -222,12 +223,71 @@ export async function createDemoStudio(options: DemoStudioOptions = {}): Promise
   seedRows(kitchen, kitchenRows);
   seedRows(commute, commuteRows);
 
+  // The console's chart needs a history, and a freshly built demo only has "now". Seed five
+  // minutes of samples that **end at the live counters**, so the chart is continuous with the
+  // real snapshot instead of jumping at the right edge. `markSeeded()` makes the page label the
+  // history as demo data rather than passing simulated numbers off as production telemetry.
+  const metrics = new MetricsTimeSeries({ now });
+  const liveStats = await queue.stats();
+  const liveReadings = rateLimitReadings(tenants.snapshot());
+  const totalsFor = (provider: 'meta' | 'youtube'): { remaining: number; capacity: number } =>
+    liveReadings
+      .filter((reading) => reading.provider === provider)
+      .reduce((sum, reading) => ({ remaining: sum.remaining + reading.remaining, capacity: sum.capacity + reading.capacity }), {
+        remaining: 0,
+        capacity: 0,
+      });
+  const metaNow = totalsFor('meta');
+  const youtubeNow = totalsFor('youtube');
+
+  const steps = 60;
+  const increments: number[] = [];
+  for (let index = 0; index < steps; index += 1) increments.push(2 + Math.round(random() * 3));
+  const totalIncrements = increments.reduce((sum, value) => sum + value, 0);
+  let demoCompleted = Math.max(0, liveStats.counts.completed - totalIncrements);
+  let demoFailed = 0;
+  const metaStart = Math.min(metaNow.capacity, metaNow.remaining + Math.round(metaNow.capacity * 0.45));
+  const youtubeStart = Math.min(youtubeNow.capacity, youtubeNow.remaining + Math.round(youtubeNow.capacity * 0.4));
+
+  for (let index = 0; index < steps; index += 1) {
+    const at = now() - (steps - index) * 5_000;
+    demoCompleted += increments[index] as number;
+    if (index === steps - 3) demoFailed += 1;
+    const progress = (index + 1) / steps;
+    const isLast = index === steps - 1;
+    metrics.record({
+      at,
+      counts: {
+        waiting: isLast ? liveStats.counts.waiting : 1 + (index % 4),
+        delayed: isLast ? liveStats.counts.delayed : index > steps - 6 ? 1 : 0,
+        active: isLast ? liveStats.counts.active : index % 3,
+        completed: demoCompleted,
+        failed: demoFailed,
+        dlq: demoFailed > 0 ? 1 : 0,
+      },
+      providers: [
+        {
+          provider: 'meta',
+          remaining: isLast ? metaNow.remaining : Math.max(0, Math.round(metaStart - (metaStart - metaNow.remaining) * progress)),
+          capacity: metaNow.capacity,
+        },
+        {
+          provider: 'youtube',
+          remaining: isLast ? youtubeNow.remaining : Math.max(0, Math.round(youtubeStart - (youtubeStart - youtubeNow.remaining) * progress)),
+          capacity: youtubeNow.capacity,
+        },
+      ],
+    });
+  }
+  metrics.markSeeded();
+
   const console = new StudioConsole({
     queue,
     tenants,
     workers: pool,
     credentials: rotator,
     telemetry: ingestor,
+    metrics,
     // The demo console is operable: its DLQ buttons work against the in-memory queue,
     // which is the point of the demo ("this is what an operator does at 2am").
     dlq: new DlqActionService({ queue, now }),

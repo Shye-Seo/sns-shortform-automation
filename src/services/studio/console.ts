@@ -13,6 +13,13 @@ import type {
 } from '../../types/telemetry';
 import type { JobKind } from '../../types/queue';
 import { DlqActionService, type DlqActionOutcome, type DlqActionRecord } from './dlqActions';
+import {
+  MetricsTimeSeries,
+  rateLimitReadings,
+  renderMetricsTimeSeriesSvg,
+  sparkline,
+  type MetricsSeriesView,
+} from '../../studio/metricsTimeSeries';
 
 export interface StudioExperimentConfig {
   experiment: Experiment;
@@ -87,6 +94,12 @@ export interface StudioSnapshot {
   dlq: StudioDlqEntry[];
   /** Recent retry/discard operations — who did what, and what was refused. */
   dlqActions: DlqActionRecord[];
+  /**
+   * Throughput / failure rate / rate-limit token trend. Absent when the console was built
+   * without a `MetricsTimeSeries` (the read model then has no history to show, and the page
+   * says so instead of drawing an empty chart).
+   */
+  metrics?: MetricsSeriesView;
 }
 
 export interface StudioConsoleOptions {
@@ -97,6 +110,8 @@ export interface StudioConsoleOptions {
   telemetry?: TelemetryIngestor;
   /** Absent → the console is read-only and the buttons explain why. */
   dlq?: DlqActionService;
+  /** Time series of queue throughput, failure rate and rate-limit tokens (see src/studio). */
+  metrics?: MetricsTimeSeries;
   now?: () => number;
 }
 
@@ -143,6 +158,7 @@ export class StudioConsole {
   private readonly credentials?: OAuthTokenRotator;
   private readonly telemetry?: TelemetryIngestor;
   private readonly dlq?: DlqActionService;
+  private readonly metrics?: MetricsTimeSeries;
   private readonly now: () => number;
   private readonly experiments = new Map<string, StudioExperimentConfig>();
 
@@ -153,6 +169,7 @@ export class StudioConsole {
     this.credentials = options.credentials;
     this.telemetry = options.telemetry;
     this.dlq = options.dlq;
+    this.metrics = options.metrics;
     this.now = options.now ?? Date.now;
   }
 
@@ -201,6 +218,14 @@ export class StudioConsole {
     });
     const credentials = this.credentials?.snapshot() ?? [];
     const tenants = this.tenants.snapshot();
+    // Every snapshot is also a metrics sample: the console is polled by the page, the API and
+    // Prometheus, so the trend builds itself from normal use instead of a separate timer.
+    const metrics = this.metrics?.record({
+      at: this.now(),
+      counts: stats.counts,
+      providers: rateLimitReadings(tenants),
+    });
+    void metrics;
 
     const reasons: string[] = [];
     if (stats.counts.dlq > 0) reasons.push(`${stats.counts.dlq} job(s) in DLQ`);
@@ -268,6 +293,7 @@ export class StudioConsole {
         failedAgoMs: job.finishedAt ? Math.max(0, this.now() - Date.parse(job.finishedAt)) : null,
       })),
       dlqActions: this.dlq?.recent(8) ?? [],
+      ...(this.metrics ? { metrics: this.metrics.view() } : {}),
     };
   }
 
@@ -316,6 +342,14 @@ export class StudioConsole {
     lines.push(
       `       waiting ${String(counts.waiting).padStart(3)}  active ${String(counts.active).padStart(3)}  delayed ${String(counts.delayed).padStart(3)}  done ${String(counts.completed).padStart(3)}  failed ${String(counts.failed).padStart(3)}  dlq ${String(counts.dlq).padStart(3)}`,
     );
+    if (snapshot.metrics && snapshot.metrics.points.length > 1) {
+      const points = snapshot.metrics.points;
+      lines.push(
+        `TREND  ${sparkline(points.map((point) => point.throughputPerSec), 32)}  ${points[points.length - 1]?.throughputPerSec.toFixed(2)}/s` +
+          `  fail ${((points[points.length - 1]?.failureRate ?? 0) * 100).toFixed(1)}%` +
+          `  · ${points.length} samples / ${(snapshot.metrics.windowMs / 60_000).toFixed(1)}m${snapshot.metrics.seeded ? ' (demo)' : ''}`,
+      );
+    }
     if (snapshot.workers.length > 0) {
       lines.push(rule);
       lines.push('WORKERS');
@@ -525,6 +559,10 @@ export class StudioConsole {
   .btn.retry:hover { background:rgba(63,185,80,.15); }
   .btn.discard { border-color:rgba(248,81,73,.4); color:var(--red); }
   .btn.discard:hover { background:rgba(248,81,73,.12); }
+  .chart-card { padding:8px 10px 2px; }
+  .chart { margin:0; }
+  .chart figcaption { color:var(--muted); font-size:11px; padding:2px 0 8px; font-variant-numeric:tabular-nums; }
+  .chart-empty { color:var(--muted); font-size:12px; padding:28px 0; text-align:center; }
 </style></head><body>
 <h1>shortform studio</h1>
 <div class="sub">${snapshot.generatedAt} · <span class="pill ${snapshot.health.status}">${snapshot.health.status}</span>
@@ -538,6 +576,9 @@ ${snapshot.health.reasons.map((reason) => ` · ${escapeHtml(reason)}`).join('')}
   <div class="stat"><b>${(snapshot.queue.successRate * 100).toFixed(1)}%</b><span>success</span></div>
   <div class="stat"><b>${snapshot.queue.p95LatencyMs}ms</b><span>p95 latency</span></div>
 </div>
+<h2>Throughput · failure · rate-limit tokens <span class="count">${snapshot.metrics?.points.length ?? 0} samples</span></h2>
+<p class="sub2">렌더 큐의 기울기입니다. 처리량(편/초), 실패율, 플랫폼별 잔여 토큰을 같은 시간축에 놓아 "지금 느려지는 이유"를 한 화면에서 봅니다.${snapshot.metrics?.seeded ? ' <span class="tag">demo history</span>' : ''}</p>
+<div class="card chart-card">${renderMetricsTimeSeriesSvg(snapshot.metrics?.points ?? [], { width: 960, height: 260, title: '렌더 큐 시계열: 처리량 · 실패율 · 레이트 리밋 토큰' })}</div>
 <h2>Workers</h2>
 <table><tr><th>worker</th><th>state</th><th>load</th><th></th><th>done</th><th>failed</th></tr>${workerRows}</table>
 <h2>Tenant rate limits</h2>
@@ -617,6 +658,18 @@ ${
       lines.push(
         `shortform_oauth_needs_reauth{tenant="${credential.tenantId}",platform="${credential.platform}"} ${credential.status === 'needs-reauth' ? 1 : 0}`,
       );
+    }
+    if (snapshot.metrics && snapshot.metrics.points.length > 0) {
+      const last = snapshot.metrics.points[snapshot.metrics.points.length - 1];
+      lines.push('# HELP shortform_render_throughput_per_sec Completed jobs per second (last sample)');
+      lines.push('# TYPE shortform_render_throughput_per_sec gauge');
+      lines.push(`shortform_render_throughput_per_sec ${last?.throughputPerSec ?? 0}`);
+      lines.push('# HELP shortform_render_failure_rate Failed / terminal jobs (last sample)');
+      lines.push('# TYPE shortform_render_failure_rate gauge');
+      lines.push(`shortform_render_failure_rate ${last?.failureRate ?? 0}`);
+      lines.push('# TYPE shortform_rate_limit_tokens_remaining gauge');
+      lines.push(`shortform_rate_limit_tokens_remaining{provider="meta"} ${last?.tokens.meta ?? 0}`);
+      lines.push(`shortform_rate_limit_tokens_remaining{provider="youtube"} ${last?.tokens.youtube ?? 0}`);
     }
     lines.push('# TYPE shortform_experiment_confidence gauge');
     for (const experiment of snapshot.experiments) {

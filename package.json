@@ -1,7 +1,7 @@
 {
   "name": "shortform-engine",
   "version": "2.0.0",
-  "description": "Distributed render queue and multi-tenant shortform publishing platform: priority queue with DLQ, token-bucket rate limits, OAuth rotation, jittered slots, hook A/B telemetry and a studio console",
+  "description": "Distributed render queue and multi-tenant shortform publishing platform: priority queue with DLQ, Redis adapter, token-bucket rate limits, OAuth rotation, jittered slots, hook A/B telemetry and a studio console with time-series metrics",
   "license": "MIT",
   "author": "Seunghye Seo <tjtmdgp95@gmail.com> (https://github.com/Shye-Seo)",
   "homepage": "https://github.com/Shye-Seo/sns-shortform-automation#readme",
@@ -26,7 +26,12 @@
     "ffmpeg",
     "audio-ducking",
     "subtitles",
-    "typescript"
+    "typescript",
+    "metrics",
+    "time-series",
+    "svg-chart",
+    "redis",
+    "observability"
   ],
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -61,12 +66,24 @@
   },
   "devDependencies": {
     "@types/node": "^20.16.10",
+    "@types/react": "^18.3.31",
+    "@types/react-dom": "^18.3.7",
     "@typescript-eslint/eslint-plugin": "^7.18.0",
     "@typescript-eslint/parser": "^7.18.0",
     "@vitest/coverage-v8": "^2.1.2",
     "eslint": "^8.57.1",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
     "tsx": "^4.19.1",
     "typescript": "^5.6.2",
     "vitest": "^2.1.2"
+  },
+  "peerDependencies": {
+    "react": ">=18"
+  },
+  "peerDependenciesMeta": {
+    "react": {
+      "optional": true
+    }
   }
 }

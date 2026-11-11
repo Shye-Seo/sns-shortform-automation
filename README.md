@@ -6,7 +6,7 @@
 그것을 **수십 개 테넌트 · 수백 편 · 플랫폼 쿼터 안에서** 안정적으로 돌리는 것은
 완전히 다른 문제입니다. 이 저장소는 두 번째 문제를 풉니다.
 
-`TypeScript` · `Node.js 20` · `ffmpeg` · `Vitest 348 tests` · `커버리지 84.3%`
+`TypeScript` · `Node.js 20` · `ffmpeg` · `Vitest 372 tests` · `커버리지 84.3%`
 `PHP 8.2` · `MySQL 8.0` · `Meta Graph API` · `NCP SENS 알림톡` · `PHPUnit 85 tests`
 
 | 계층 | 무엇을 보장하나 |
@@ -17,11 +17,11 @@
 | **멀티테넌트** | 대행사 A의 폭주가 크리에이터 B의 예약을 밀어내지 않는다 |
 | **OAuth 로테이션** | 30개 예약이 동시에 만료 토큰을 만나도 토큰 갱신은 1회 |
 | **훅 A/B** | 훅 3안 → 웹훅 집계 → 통계 판정 → 다음 대본 가중치까지 닫힌 루프 |
-| **스튜디오 콘솔** | 큐·워커·쿼터·OAuth·실험을 한 스냅샷으로. text/HTML/Prometheus |
+| **스튜디오 콘솔** | 큐·워커·쿼터·OAuth·실험을 한 스냅샷으로. text/HTML/Prometheus + 처리량·실패율·토큰 시계열 차트 |
 | **서버 계층(DB·API)** | 큐 상태·발행 기록·알림 이력이 MySQL 행으로 남고, PHP 워커가 `SKIP LOCKED`로 선점한다 |
 
 ```bash
-npm ci && npm run verify      # 348 tests, 네트워크·ffmpeg 없이
+npm ci && npm run verify      # 372 tests, 네트워크·ffmpeg 없이
 npm run cli -- studio         # 데모 콘솔 (아래 출력 참고)
 ```
 
@@ -419,6 +419,40 @@ HEALTH: 1 job(s) in DLQ · 1 non-retryable failure(s) · success rate 83.3%
 같은 스냅샷이 `--html .work/studio.html`(자체 CSS, 외부 CDN 없음)과 Prometheus
 (`GET /v1/metrics`)로 나옵니다.
 
+### 9.1 시계열 메트릭 — "지금 느려지는 이유"를 한 화면에
+
+스냅샷은 **현재 값**만 줍니다. 새벽 3시에 운영자가 알고 싶은 것은 기울기입니다: 처리량이 떨어지는지,
+실패율이 튀는지, Meta 토큰이 바닥나 발행이 막히기 직전인지. 그래서 콘솔은 스냅샷을 고정 크기 링
+버퍼(기본 600 샘플)에 쌓고, 누적 카운터의 **차분**으로 초당 처리량과 구간 실패율을 계산합니다.
+
+![metrics](docs/preview/metrics-chart.png)
+
+| 행 | 값 | 왜 이 축인가 |
+| --- | --- | --- |
+| 처리량 | 직전 샘플 대비 완료 편수 ÷ 경과 초 | 절대 편수가 아니라 속도여야 정체가 보인다 |
+| 실패율 | 구간 종료 작업 중 `failed + dlq` 비율 | 재시도로 넘어간 작업은 실패가 아니다(성공도 아니다) |
+| 토큰 | Meta · YouTube 잔여 요청 버킷 합계 | 0에 닿는 순간이 발행이 막히는 순간이다 |
+
+설계 메모
+
+- **샘플은 스냅샷에서 나온다.** 페이지·API·Prometheus가 같은 `snapshot()`을 부르므로, 별도 타이머 없이
+  정상 사용만으로 이력이 쌓입니다. 프로세스가 죽으면 이력도 사라지는 것이 맞고(관측치), 장기 보관은
+  Prometheus가 합니다(`shortform_render_throughput_per_sec` 등).
+- **차분은 음수를 0으로 자릅니다.** 재시작·DLQ 재시도로 누적 카운터가 줄 수 있는데, 그때 음수 처리량을
+  그리면 그래프가 거짓말을 합니다.
+- **기하 계산은 순수 함수**(`buildMetricsChart`)이고, 표현 계층이 둘입니다: 서버 HTML용 문자열
+  렌더러(의존성 0)와 React 컴포넌트. 같은 path 문자열을 쓰므로 곡선이 어긋날 수 없습니다.
+- **React는 선택적 peer**입니다. 기본 콘솔은 React 없이 돌고, React 호스트에 임베드할 때만
+  `MetricsTimeSeriesChart`를 가져다 씁니다.
+- **데모 이력은 데모라고 표시합니다.** `markSeeded()`가 붙은 이력은 페이지에 `demo history` 배지가
+  붙습니다. 시뮬레이션 숫자를 운영 텔레메트리처럼 보여 주지 않기 위해서입니다.
+
+```tsx
+import { MetricsTimeSeriesChart } from 'shortform-engine/dist/studio/MetricsTimeSeriesChart';
+
+<MetricsTimeSeriesChart series={snapshot.metrics?.points ?? []} width={960} height={260} />;
+```
+
 **읽기 API는 GET 전용, 변경은 딱 두 개의 POST뿐입니다.** GET으로 큐를 되돌릴 수 있는
 대시보드는 메일 스캐너나 미리보기 봇이 언젠가 실수로 되돌립니다. 그래서 DLQ 조작은
 명시적 POST + 경로의 job id로만 가능하고, 어떤 작업이 바뀔 수 있는지는
@@ -547,7 +581,7 @@ npm run cli -- studio --html .work/studio.html
 ## 12. 검증
 
 ```bash
-npm run verify    # typecheck + lint + 348 tests
+npm run verify    # typecheck + lint + 372 tests
 npm run coverage  # 84.3% statements · 79.7% branches
 ```
 
@@ -562,6 +596,7 @@ npm run coverage  # 84.3% statements · 79.7% branches
 | 텔레메트리 (생성·멱등·집계·검정·피드백) | `telemetry.test.ts` | 35 |
 | 콘솔/API (스냅샷·HTML 이스케이프·라우팅) | `studio.test.ts` | 19 |
 | **Redis 큐 (WATCH 원자성·6노드 경합·지연 승격·lease 회수·드라이버 선택)** | `redisAdapter.test.ts` | **24** |
+| **시계열 메트릭 (차분·링버퍼·토큰 합계·차트 기하·SVG 이스케이프·데모 이력)** | `metricsTimeSeries.test.ts` · `metricsChart.test.tsx` | **21 + 3** |
 | 기존 파이프라인 (대본·자막·더킹·렌더·게시) | 8개 파일 | 147 |
 
 네트워크·ffmpeg 없이 전부 통과합니다. 외부 API는 fake HTTP와 주입된 리프레셔로,
@@ -610,7 +645,7 @@ npm run coverage  # 84.3% statements · 79.7% branches
 - [x] Meta Graph API 웹훅 HMAC-SHA256 서명 보안 검증 미들웨어
 - [x] Dead Letter Queue (DLQ) 원클릭 재시도 및 폐기 콘솔 UI
 - [x] Redis 큐 어댑터 (WATCH/MULTI/EXEC 원자적 선점 · 지연 승격 · lease 회수 · `QUEUE_DRIVER` 스위칭)
-- [ ] 실시간 렌더링 큐 시계열 메트릭 대시보드 (분당 처리량, 실패율 시각화)
+- [x] 실시간 렌더링 큐 시계열 메트릭 차트 (처리량·실패율·플랫폼 토큰 추이, SVG/React 두 표현)
 
 
 ---
@@ -638,7 +673,7 @@ platform built on a working 60-second shortform pipeline.
   exploration floor.
 - **Studio console** — one snapshot rendered as terminal text, a self-contained HTML page,
   Prometheus text, and a read-only JSON API.
-- **Verification** — 348 Vitest cases, 84.3% statement coverage, no network and no ffmpeg
+- **Verification** — 372 Vitest cases, 84.3% statement coverage, no network and no ffmpeg
   required (injected clock, RNG, sleep, HTTP and token refresher).
 
 ```bash
