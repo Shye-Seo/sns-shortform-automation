@@ -7,6 +7,7 @@
 완전히 다른 문제입니다. 이 저장소는 두 번째 문제를 풉니다.
 
 `TypeScript` · `Node.js 20` · `ffmpeg` · `Vitest 301 tests` · `커버리지 84.3%`
+`PHP 8.2` · `MySQL 8.0` · `Meta Graph API` · `NCP SENS 알림톡` · `PHPUnit 64 tests`
 
 | 계층 | 무엇을 보장하나 |
 |------|------------------|
@@ -17,6 +18,7 @@
 | **OAuth 로테이션** | 30개 예약이 동시에 만료 토큰을 만나도 토큰 갱신은 1회 |
 | **훅 A/B** | 훅 3안 → 웹훅 집계 → 통계 판정 → 다음 대본 가중치까지 닫힌 루프 |
 | **스튜디오 콘솔** | 큐·워커·쿼터·OAuth·실험을 한 스냅샷으로. text/HTML/Prometheus |
+| **서버 계층(DB·API)** | 큐 상태·발행 기록·알림 이력이 MySQL 행으로 남고, PHP 워커가 `SKIP LOCKED`로 선점한다 |
 
 ```bash
 npm ci && npm run verify      # 301 tests, 네트워크·ffmpeg 없이
@@ -495,6 +497,7 @@ npm run coverage  # 84.3% statements · 79.7% branches
 **로드맵**: Redis 큐 어댑터 → 워커 컨테이너 분리 → 실계정 429 관측으로 버킷 보정 →
 웹훅 수신(서명 검증) → 실험 대시보드 시계열.
 
+
 ---
 
 ## 15. English
@@ -530,6 +533,68 @@ npm run cli -- queue run --jobs 8 --concurrency 3 --fail-every 3
 ```
 
 ---
+
+---
+
+## 16. 서버 계층 — PHP 8.2 · MySQL 8.0 · Meta Graph API · 알림톡
+
+TypeScript 엔진은 "영상을 만드는 일"을 합니다. 이 계층은 **프로세스가 죽어도 남아야 하는 것**을
+맡습니다: 큐 상태, 발행 기록, 알림 이력. 같은 파이프라인을 "빠르고 상태 없는 층"과
+"잃으면 안 되는 층"으로 나눈 지점입니다.
+
+```mermaid
+flowchart LR
+  subgraph TS["TypeScript · Node 20"]
+    S["scriptEngine → videoCompositor<br/>ffmpeg 청크 렌더"]
+    ST["studio console"]
+  end
+  subgraph PHP["PHP 8.2"]
+    W["bin/worker.php<br/>claim → progress → complete"]
+    API["PublishWebhookController<br/>GET/POST /webhooks/instagram"]
+    ORC["PublishOrchestrator<br/>container → poll → publish"]
+    SENS["NaverCloudSensService<br/>HMAC-SHA256"]
+  end
+  subgraph DB["MySQL 8.0"]
+    J[("render_jobs<br/>state · lease · dedupe")]
+    P[("publish_logs<br/>container · media · quota")]
+    N[("alimtalk_notifications")]
+  end
+  IG["Meta Graph API"]
+  S -->|enqueue| J
+  W -->|FOR UPDATE SKIP LOCKED| J
+  ORC --> IG
+  ORC --> P
+  IG -->|webhook + X-Hub-Signature-256| API --> P
+  W --> SENS --> N
+```
+
+| 계층 | 무엇을 보장하나 |
+| --- | --- |
+| **DB (7 테이블)** | 큐 상태·lease·전이 이력·발행 3단계·쿼터·알림 도달이 모두 행으로 남는다 |
+| **큐 선점** | `ORDER BY priority DESC, available_at, id LIMIT 1 FOR UPDATE SKIP LOCKED` — 워커 10개가 같은 행에 줄 서지 않는다 |
+| **장애 복구** | lease 만료 = 죽은 워커의 작업. 회수해서 `delayed`(또는 `dlq`)로 되돌린다 |
+| **재시도 분류** | `retryable`이 상태를 정한다: 지수 백오프 재시도 / 즉시 실패 / DLQ |
+| **발행** | 컨테이너 → `status_code=FINISHED` 폴링 → `media_publish`. 준비 전 발행은 일일 25건 쿼터를 태운다 |
+| **토큰** | Facebook Login / Instagram Login 두 갱신 흐름 + single-flight lease(30개 예약 → 갱신 1회) |
+| **웹훅** | 원문(raw body) HMAC 검증, `last_event_id`로 재전송 차단, `applied/duplicate/unknown_media` 구분 |
+| **알림톡** | 검수된 템플릿 + 변수 치환 + dedupe 키. 알림 실패가 렌더·발행을 실패시키지 않는다 |
+
+**실행**
+
+```bash
+docker compose up -d mysql
+cd backend && composer install
+php bin/migrate.php --fresh --seed --verify     # 7 테이블 · 인덱스 · FK 확인
+php bin/worker.php --once                       # 선점 → 진행률 → 완료 → 큐 현황
+composer test                                   # 64 tests (단위 50 + MySQL 실연동 14)
+```
+
+**문서**
+
+- [`database/ERD_SPEC.md`](database/ERD_SPEC.md) — Mermaid ERD, 테이블·관계, 큐/발행 상태머신,
+  인덱싱 전략(`(state, priority DESC, available_at, id)` 등), 타입 선택 근거, 운영 쿼리
+- [`backend/README.md`](backend/README.md) — API 계약, Graph API 재시도 분류표, 토큰 2흐름,
+  웹훅 서명, SENS 서명 함정 3가지, 테스트 목록
 
 ## 작성자
 

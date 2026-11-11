@@ -1,0 +1,35 @@
+# Local MySQL 8.0 for the queue / publish backend
+#
+#   docker compose up -d mysql
+#   cd backend && cp .env.example .env    # DB_HOST=127.0.0.1 DB_USERNAME=shortform DB_PASSWORD=shortform
+#   php bin/migrate.php --verify
+#
+# The initdb scripts run only on an empty volume. To re-apply:
+#   docker compose down -v && docker compose up -d mysql
+services:
+  mysql:
+    image: mysql:8.0.40
+    container_name: shortform-mysql
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_0900_ai_ci
+      - --default-time-zone=+09:00
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: shortform
+      MYSQL_USER: shortform
+      MYSQL_PASSWORD: shortform
+    ports:
+      - "3307:3306"
+    volumes:
+      - shortform-mysql:/var/lib/mysql
+      - ./database/schema.sql:/docker-entrypoint-initdb.d/10-schema.sql:ro
+      - ./database/seed_demo.sql:/docker-entrypoint-initdb.d/20-seed.sql:ro
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-uroot", "-proot"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+volumes:
+  shortform-mysql:

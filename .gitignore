@@ -39,3 +39,8 @@ assets/music/*
 *.swp
 *.log
 npm-debug.log*
+
+# php backend
+backend/vendor/
+backend/.env
+backend/.phpunit.cache/
