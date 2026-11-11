@@ -110,6 +110,8 @@ export interface ProjectRenderResult {
 export function createProjectRenderHandler(options: {
   render: (projectDir: string, config: { execute: boolean }) => Promise<ProjectRenderResult>;
   chunkCount?: number;
+  /** Default true. `false` keeps the queue path usable without ffmpeg (plan only). */
+  execute?: boolean;
   onStart?: (projectDir: string) => Promise<void> | void;
 }): JobHandler<RenderJobResult> {
   return async ({ job, reportProgress }) => {
@@ -118,7 +120,7 @@ export function createProjectRenderHandler(options: {
     const chunks = planRenderChunks(payload.durationSec, payload.chunkCount ?? options.chunkCount ?? 4);
     await options.onStart?.(payload.projectId);
     await reportProgress(5);
-    const result = await options.render(payload.projectId, { execute: true });
+    const result = await options.render(payload.projectId, { execute: options.execute ?? true });
     if (result.status === 'failed') {
       throw new ShortformError(`render failed: ${(result.warnings ?? []).slice(-2).join(' / ')}`, {
         code: 'MEDIA',

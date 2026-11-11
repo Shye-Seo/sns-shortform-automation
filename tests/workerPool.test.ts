@@ -255,6 +255,26 @@ describe('render handlers', () => {
     expect((stored.result as RenderJobResult).simulated).toBe(false);
   });
 
+  it('can plan a project through the queue without ffmpeg', async () => {
+    const queue = queueWithRetry();
+    const calls: boolean[] = [];
+    await enqueueRenderJobs(queue, 1);
+    const pool = new WorkerPool({
+      queue,
+      size: 1,
+      handler: createProjectRenderHandler({
+        execute: false,
+        render: async (_projectDir, config) => {
+          calls.push(config.execute);
+          return { status: 'planned', output: { path: '.work/proj-0/render.mp4' }, warnings: [] };
+        },
+      }),
+    });
+    await pool.drain();
+    expect(calls).toEqual([false]);
+    expect((await queue.counts()).completed).toBe(1);
+  });
+
   it('turns a failed render into a retryable job error', async () => {
     const queue = queueWithRetry();
     const [job] = await enqueueRenderJobs(queue, 1);

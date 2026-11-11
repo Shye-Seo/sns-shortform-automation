@@ -552,6 +552,7 @@ queueCommand
       const failEvery = Math.max(0, Number(options.failEvery));
       const computed = options.project
         ? createProjectRenderHandler({
+            execute: Boolean(options.execute),
             render: async (projectDir, config) => {
               const { job } = await renderProject(projectDir, { execute: config.execute });
               return { status: job.status, output: job.output, warnings: job.warnings };

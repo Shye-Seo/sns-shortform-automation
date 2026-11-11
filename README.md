@@ -6,7 +6,7 @@
 그것을 **수십 개 테넌트 · 수백 편 · 플랫폼 쿼터 안에서** 안정적으로 돌리는 것은
 완전히 다른 문제입니다. 이 저장소는 두 번째 문제를 풉니다.
 
-`TypeScript` · `Node.js 20` · `ffmpeg` · `Vitest 300 tests` · `커버리지 84.3%`
+`TypeScript` · `Node.js 20` · `ffmpeg` · `Vitest 301 tests` · `커버리지 84.3%`
 
 | 계층 | 무엇을 보장하나 |
 |------|------------------|
@@ -19,7 +19,7 @@
 | **스튜디오 콘솔** | 큐·워커·쿼터·OAuth·실험을 한 스냅샷으로. text/HTML/Prometheus |
 
 ```bash
-npm ci && npm run verify      # 300 tests, 네트워크·ffmpeg 없이
+npm ci && npm run verify      # 301 tests, 네트워크·ffmpeg 없이
 npm run cli -- studio         # 데모 콘솔 (아래 출력 참고)
 ```
 
@@ -436,14 +436,14 @@ npm run cli -- studio --html .work/studio.html
 ## 12. 검증
 
 ```bash
-npm run verify    # typecheck + lint + 300 tests
+npm run verify    # typecheck + lint + 301 tests
 npm run coverage  # 84.3% statements · 79.7% branches
 ```
 
 | 영역 | 파일 | 건수 |
 |------|------|------|
 | 큐 (우선순위·백오프·DLQ·lease·멱등·파일저장소) | `queue.test.ts` | 36 |
-| 워커 풀 (동시성 상한·재시도·진행률·부하) | `workerPool.test.ts` | 17 |
+| 워커 풀 (동시성 상한·재시도·진행률·부하) | `workerPool.test.ts` | 18 |
 | 레이트 리밋 (버스트·리필·격리·unit 계산) | `rateLimit.test.ts` | 21 |
 | OAuth (single-flight·로테이션·영구오류) | `oauth.test.ts` | 14 |
 | 발행 슬롯 (창·간격·분경계·재현성) | `publishSlots.test.ts` | 11 |
@@ -520,7 +520,7 @@ platform built on a working 60-second shortform pipeline.
   exploration floor.
 - **Studio console** — one snapshot rendered as terminal text, a self-contained HTML page,
   Prometheus text, and a read-only JSON API.
-- **Verification** — 300 Vitest cases, 84.3% statement coverage, no network and no ffmpeg
+- **Verification** — 301 Vitest cases, 84.3% statement coverage, no network and no ffmpeg
   required (injected clock, RNG, sleep, HTTP and token refresher).
 
 ```bash
