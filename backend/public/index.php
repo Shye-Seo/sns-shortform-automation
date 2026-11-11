@@ -27,6 +27,7 @@ use Shortform\Http\Request;
 use Shortform\Http\Router;
 use Shortform\Http\WebhookRejected;
 use Shortform\Repositories\ShortformRepository;
+use Shortform\Security\MetaWebhookSignatureVerifier;
 use Shortform\Sens\SensConfig;
 use Shortform\Services\DisabledAlertNotifier;
 use Shortform\Services\InstagramConfig;
@@ -79,7 +80,7 @@ try {
     $webhook = new PublishWebhookController(
         $repository,
         Env::get('IG_VERIFY_TOKEN', '') ?? '',
-        Env::get('IG_APP_SECRET', '') ?? '',
+        new MetaWebhookSignatureVerifier(Env::get('IG_APP_SECRET', '') ?? ''),
         $clock,
     );
 

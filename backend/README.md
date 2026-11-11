@@ -20,7 +20,7 @@ composer install
 cp .env.example .env                  # DB_* only is enough; without SENS/IG keys those features stay off
 php bin/migrate.php --fresh --seed --verify
 php bin/worker.php --once             # claim → progress → complete → queue counts
-composer test                         # 64 tests (50 unit + 14 against live MySQL 8.0)
+composer test                         # 85 tests (72 unit + 13 skipped without MySQL)
 ```
 
 Measured locally (MySQL 8.0.40, PHP 8.2.32):
@@ -78,7 +78,7 @@ backend/
 │   ├── Domain/                               # Platform, JobState, PublishStatus enums
 │   ├── Database/Connection.php               # PDO + deadlock retry
 │   └── Support/                              # Env, Clock, Sleeper, HttpClient(Curl)
-├── tests/                                    # 64 tests, integration gated by SHORTFORM_INTEGRATION=1
+├── tests/                                    # 85 tests, integration gated by SHORTFORM_INTEGRATION=1
 └── examples/ (see database/seed_demo.sql)
 ```
 
@@ -129,8 +129,21 @@ scheduled posts hitting an expired token cause **one** refresh, not 30.
 
 ### 4. Webhooks: signature over the raw body, and idempotent by event id
 
-- Verification: `sha256=` + `HMAC-SHA256(rawBody, IG_APP_SECRET)`, compared with `hash_equals`.
-  Parsing JSON first (or re-encoding the array) changes bytes and breaks the signature.
+Verification lives in `Security/MetaWebhookSignatureVerifier` — one class, four rules:
+
+| Situation | Result | Why it is a separate case |
+| --- | --- | --- |
+| valid `sha256=` + `HMAC-SHA256(rawBody, IG_APP_SECRET)` | pass | — |
+| no secret configured (`IG_APP_SECRET=''`) | reject (`missing_app_secret`) | **fail closed**: an unset secret must never mean "accept anything" |
+| `sha1=` header | reject (`legacy_sha1_signature`) | downgrade attempt, or an app still on the old config |
+| missing / blank / malformed header | reject (`missing_header`, `malformed_header`) | a client bug, not a forgery — the reason tells them apart |
+| digest differs | reject (`signature_mismatch`) | compared with `hash_equals` |
+
+- `hash_equals` instead of `===`: byte-by-byte comparison returns at the first difference, which
+  leaks how many leading bytes matched and enables forging a signature one byte at a time.
+- The comparison is over the **raw body**. Parsing JSON first (or re-encoding the array) changes
+  bytes and breaks the signature. Hex case and surrounding whitespace are normalised, so a valid
+  signature is never rejected for formatting.
 - PHP rewrites `hub.mode` to `hub_mode` in query strings. The verification reads **both** spellings —
   this single detail is the usual reason "the webhook cannot be verified".
 - Meta re-delivers the same event for up to 24h. `applyWebhookEvent` guards the UPDATE with
@@ -180,7 +193,7 @@ duplicate-placeholder bugs were caught here.
 ## Tests
 
 ```bash
-composer test                            # 64 tests; integration skipped without MySQL
+composer test                            # 85 tests; integration skipped without MySQL
 SHORTFORM_INTEGRATION=1 composer test    # includes 14 live MySQL tests
 ```
 
@@ -191,6 +204,7 @@ SHORTFORM_INTEGRATION=1 composer test    # includes 14 live MySQL tests
 | `Services/NaverCloudSensServiceTest` | signature vectors, header consistency, 100-message grouping, delivery 0000 vs 3005 |
 | `Services/ShortformAlertNotifierTest` | dedupe, template per event, SENS failure contained |
 | `Controllers/PublishWebhookControllerTest` | challenge echo, dotted params, raw-body signature, duplicate vs unknown media |
+| `Security/MetaWebhookSignatureVerifierTest` | valid/forged/tampered body, empty or wrong secret, SHA-1 downgrade, malformed and uppercase headers, UTF-8 body, actionable rejection messages |
 | `Integration/DatabaseIntegrationTest` | SKIP LOCKED (one worker wins), progress monotonic, delayed→dlq, stalled reclaim, one publish row with attempts++, webhook redelivery, notification dedupe, CHECK on experiment variants |
 
 ## Operations

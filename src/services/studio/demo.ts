@@ -8,6 +8,7 @@ import { generateHookVariants } from '../../lib/telemetry/hooks';
 import { TelemetryIngestor } from '../../lib/telemetry/metrics';
 import type { Experiment, HookVariant, MetricWindow } from '../../types/telemetry';
 import { StudioConsole } from './console';
+import { DlqActionService } from './dlqActions';
 
 export interface DemoStudioOptions {
   statePath?: string;
@@ -227,6 +228,9 @@ export async function createDemoStudio(options: DemoStudioOptions = {}): Promise
     workers: pool,
     credentials: rotator,
     telemetry: ingestor,
+    // The demo console is operable: its DLQ buttons work against the in-memory queue,
+    // which is the point of the demo ("this is what an operator does at 2am").
+    dlq: new DlqActionService({ queue, now }),
     now,
   });
   for (const experiment of experiments) {

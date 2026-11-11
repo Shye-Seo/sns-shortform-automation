@@ -12,6 +12,7 @@ import type {
   ProportionMetric,
 } from '../../types/telemetry';
 import type { JobKind } from '../../types/queue';
+import { DlqActionService, type DlqActionOutcome, type DlqActionRecord } from './dlqActions';
 
 export interface StudioExperimentConfig {
   experiment: Experiment;
@@ -65,8 +66,14 @@ export interface StudioDlqEntry {
   name: string;
   kind: JobKind;
   attempts: number;
+  /** Retry budget, so "attempts 3/3" explains why it is in the DLQ at all. */
+  maxAttempts: number;
+  priority: number;
+  progress: number;
   lastError: string | null;
   failedAt: string | null;
+  /** How long it has been sitting in the DLQ (ms) — the operator's triage signal. */
+  failedAgoMs: number | null;
 }
 
 export interface StudioSnapshot {
@@ -78,6 +85,8 @@ export interface StudioSnapshot {
   credentials: CredentialSnapshot[];
   experiments: StudioExperimentView[];
   dlq: StudioDlqEntry[];
+  /** Recent retry/discard operations — who did what, and what was refused. */
+  dlqActions: DlqActionRecord[];
 }
 
 export interface StudioConsoleOptions {
@@ -86,6 +95,8 @@ export interface StudioConsoleOptions {
   workers?: WorkerPool;
   credentials?: OAuthTokenRotator;
   telemetry?: TelemetryIngestor;
+  /** Absent → the console is read-only and the buttons explain why. */
+  dlq?: DlqActionService;
   now?: () => number;
 }
 
@@ -98,6 +109,17 @@ function bar(ratio: number, width = BAR_WIDTH): string {
 
 function pct(ratio: number): string {
   return `${Math.round(ratio * 100)}%`.padStart(4);
+}
+
+/** 3m 12s / 2h 04m — DLQ age in the unit an operator thinks in. */
+export function formatAge(ms: number): string {
+  const seconds = Math.max(0, Math.round(ms / 1_000));
+  if (seconds < 60) return `${seconds}s`;
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}m ${String(seconds % 60).padStart(2, '0')}s`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ${String(minutes % 60).padStart(2, '0')}m`;
+  return `${Math.floor(hours / 24)}d ${String(hours % 24).padStart(2, '0')}h`;
 }
 
 function escapeHtml(value: string): string {
@@ -120,6 +142,7 @@ export class StudioConsole {
   private readonly workers?: WorkerPool;
   private readonly credentials?: OAuthTokenRotator;
   private readonly telemetry?: TelemetryIngestor;
+  private readonly dlq?: DlqActionService;
   private readonly now: () => number;
   private readonly experiments = new Map<string, StudioExperimentConfig>();
 
@@ -129,7 +152,40 @@ export class StudioConsole {
     this.workers = options.workers;
     this.credentials = options.credentials;
     this.telemetry = options.telemetry;
+    this.dlq = options.dlq;
     this.now = options.now ?? Date.now;
+  }
+
+  /** Whether one-click DLQ actions are wired (a read-only console says so instead of lying). */
+  get canOperateDlq(): boolean {
+    return this.dlq !== undefined;
+  }
+
+  /**
+   * One-click retry from the monitoring console.
+   * The console owns the *decision*; the service owns the *rule* and the audit record.
+   */
+  async retryDlqJob(jobId: string, actor = 'studio-console'): Promise<DlqActionOutcome> {
+    return this.operateDlq('retry', jobId, actor);
+  }
+
+  async discardDlqJob(jobId: string, actor = 'studio-console'): Promise<DlqActionOutcome> {
+    return this.operateDlq('discard', jobId, actor);
+  }
+
+  private async operateDlq(action: 'retry' | 'discard', jobId: string, actor: string): Promise<DlqActionOutcome> {
+    const at = new Date(this.now()).toISOString();
+    if (!this.dlq) {
+      return {
+        status: 409,
+        ok: false,
+        action,
+        jobId,
+        message: 'DLQ 조작이 연결되지 않았습니다. StudioConsole에 dlq(DlqActionService)를 주입하세요.',
+        at,
+      };
+    }
+    return action === 'retry' ? this.dlq.retry(jobId, actor) : this.dlq.discard(jobId, actor);
   }
 
   registerExperiment(config: StudioExperimentConfig): void {
@@ -204,9 +260,14 @@ export class StudioConsole {
         name: job.name,
         kind: job.kind,
         attempts: job.attempts,
+        maxAttempts: job.maxAttempts,
+        priority: job.priority,
+        progress: job.progress,
         lastError: job.lastError,
         failedAt: job.finishedAt,
+        failedAgoMs: job.finishedAt ? Math.max(0, this.now() - Date.parse(job.finishedAt)) : null,
       })),
+      dlqActions: this.dlq?.recent(8) ?? [],
     };
   }
 
@@ -303,9 +364,27 @@ export class StudioConsole {
     }
     if (snapshot.dlq.length > 0) {
       lines.push(rule);
-      lines.push('DEAD LETTER QUEUE');
+      lines.push(`DEAD LETTER QUEUE  ${snapshot.dlq.length} job(s) need a decision`);
       for (const entry of snapshot.dlq) {
-        lines.push(`  ${entry.jobId.slice(0, 18)}  ${entry.tenantId}  attempts ${entry.attempts}  ${entry.lastError ?? ''}`);
+        const age = entry.failedAgoMs === null ? '—' : formatAge(entry.failedAgoMs);
+        lines.push(
+          `  ${entry.jobId.slice(0, 18)}  ${entry.tenantId}  ${entry.kind.padEnd(8)} attempts ${entry.attempts}/${entry.maxAttempts}  waiting ${age}`,
+        );
+        lines.push(`    ${entry.name}  ·  ${entry.lastError ?? 'no error message'}`);
+      }
+      lines.push(
+        this.canOperateDlq
+          ? '  재시도/폐기: npm run cli -- queue replay <jobId> · studio --serve 로 열면 원클릭 버튼이 동작합니다'
+          : '  재시도/폐기: npm run cli -- queue replay <jobId> (콘솔 조작은 DlqActionService 주입 시 활성화)',
+      );
+    }
+    if (snapshot.dlqActions.length > 0) {
+      lines.push(rule);
+      lines.push('DLQ OPERATOR LOG');
+      for (const record of snapshot.dlqActions) {
+        lines.push(
+          `  ${record.at.slice(11, 19)}  ${record.action.padEnd(7)} ${record.jobId.slice(0, 18).padEnd(18)} ${record.outcome.padEnd(7)} ${record.actor}  ${record.detail}`,
+        );
       }
     }
     if (snapshot.health.reasons.length > 0) {
@@ -315,8 +394,19 @@ export class StudioConsole {
     return `${lines.join('\n')}\n`;
   }
 
-  /** One self-contained page — no CDN, no JS, safe to open from disk. */
-  renderHtml(snapshot: StudioSnapshot): string {
+  /**
+   * One self-contained page — no CDN, no external assets.
+   *
+   * `actionBasePath` decides whether the DLQ buttons are live: when the page is
+   * served by the studio server (`cli studio --serve`) the forms post to
+   * `/v1/queue/dlq/{id}/{retry|discard}`. Opened from disk they are rendered
+   * disabled with the reason, instead of looking clickable and doing nothing.
+   */
+  renderHtml(snapshot: StudioSnapshot, options: { actionBasePath?: string; standalone?: boolean } = {}): string {
+    const actionBase = (options.actionBasePath ?? '/v1').replace(/\/+$/, '');
+    // 파일로 내보낸 페이지(file://)에는 POST할 서버가 없다. 눌러도 아무 일이 없는 버튼을
+    // 그리느니, 사유를 적고 비활성으로 그린다.
+    const actionsLive = this.canOperateDlq && options.standalone !== true;
     const tenantRows = snapshot.tenants
       .flatMap((tenant) =>
         tenant.providers.map(
@@ -360,13 +450,35 @@ export class StudioConsole {
 
     const dlqRows =
       snapshot.dlq.length === 0
-        ? '<tr><td colspan="4" class="muted">empty</td></tr>'
+        ? '<tr><td colspan="7" class="muted">empty — 실패한 작업이 없습니다</td></tr>'
         : snapshot.dlq
-            .map(
-              (entry) =>
-                `<tr><td><code>${escapeHtml(entry.jobId)}</code></td><td>${escapeHtml(entry.tenantId)}</td><td class="num">${entry.attempts}</td><td>${escapeHtml(entry.lastError ?? '')}</td></tr>`,
-            )
+            .map((entry) => {
+              const jobId = escapeHtml(entry.jobId);
+              const age = entry.failedAgoMs === null ? '—' : formatAge(entry.failedAgoMs);
+              const buttons = actionsLive
+                ? `<form class="inline" method="post" data-dlq="retry" action="${escapeHtml(`${actionBase}/queue/dlq/${encodeURIComponent(entry.jobId)}/retry`)}">
+          <button type="submit" class="btn retry"${entry.attempts >= entry.maxAttempts ? '' : ''}>재시도</button></form>
+        <form class="inline" method="post" data-dlq="discard" action="${escapeHtml(`${actionBase}/queue/dlq/${encodeURIComponent(entry.jobId)}/discard`)}">
+          <button type="submit" class="btn discard">폐기</button></form>`
+                : `<span class="muted" title="콘솔 서버로 열어야 동작합니다">버튼 비활성</span>`;
+              return `<tr>
+        <td><code>${jobId}</code><div class="muted small">${escapeHtml(entry.name)}</div></td>
+        <td>${escapeHtml(entry.tenantId)}</td>
+        <td>${entry.kind}${entry.priority >= 8 ? ' <span class="tag">P' + entry.priority + '</span>' : ''}</td>
+        <td class="num">${entry.attempts}/${entry.maxAttempts}</td>
+        <td class="num">${age}</td>
+        <td class="err">${escapeHtml(entry.lastError ?? '')}</td>
+        <td class="act">${buttons}</td>
+      </tr>`;
+            })
             .join('\n');
+
+    const dlqActionRows = snapshot.dlqActions
+      .map(
+        (record) =>
+          `<tr><td class="muted">${escapeHtml(record.at.slice(11, 19))}</td><td>${record.action}</td><td><code>${escapeHtml(record.jobId)}</code></td><td><span class="tag ${record.outcome === 'applied' ? 'applied' : 'rejected'}">${record.outcome}</span></td><td>${escapeHtml(record.actor)}</td><td class="muted">${escapeHtml(record.detail)}</td></tr>`,
+      )
+      .join('\n');
 
     return `<!doctype html>
 <html lang="ko"><head><meta charset="utf-8">
@@ -398,6 +510,21 @@ export class StudioConsole {
   .tag { font-size:11px; padding:1px 7px; border-radius:999px; background:#21262d; color:var(--muted); text-transform:uppercase; }
   .tag.winner { background:rgba(63,185,80,.15); color:var(--green); }
   .tag.inconclusive { background:rgba(210,153,34,.15); color:var(--amber); }
+  .tag.applied { background:rgba(63,185,80,.15); color:var(--green); }
+  .tag.rejected { background:rgba(248,81,73,.15); color:var(--red); }
+  .count { font-size:12px; color:var(--muted); font-weight:400; }
+  .sub2 { color:var(--muted); font-size:12px; margin:0 0 8px; }
+  .small { font-size:11px; }
+  .err { max-width:280px; color:#ffb4a8; font-size:12px; }
+  .act { white-space:nowrap; }
+  form.inline { display:inline; }
+  .btn { font:inherit; font-size:12px; padding:4px 10px; border-radius:6px; cursor:pointer;
+         border:1px solid var(--line); background:#21262d; color:var(--text); margin-right:4px; }
+  .btn:hover { border-color:#8b949e; }
+  .btn.retry { border-color:rgba(63,185,80,.5); color:var(--green); }
+  .btn.retry:hover { background:rgba(63,185,80,.15); }
+  .btn.discard { border-color:rgba(248,81,73,.4); color:var(--red); }
+  .btn.discard:hover { background:rgba(248,81,73,.12); }
 </style></head><body>
 <h1>shortform studio</h1>
 <div class="sub">${snapshot.generatedAt} · <span class="pill ${snapshot.health.status}">${snapshot.health.status}</span>
@@ -416,8 +543,43 @@ ${snapshot.health.reasons.map((reason) => ` · ${escapeHtml(reason)}`).join('')}
 <h2>Tenant rate limits</h2>
 <table><tr><th>tenant</th><th>plan</th><th>provider</th><th>requests used</th><th></th><th>daily quota used</th><th></th></tr>${tenantRows}</table>
 ${experimentCards ? `<h2>Hook A/B</h2>${experimentCards}` : ''}
-<h2>Dead letter queue</h2>
-<table><tr><th>job</th><th>tenant</th><th>attempts</th><th>last error</th></tr>${dlqRows}</table>
+<h2>Dead letter queue <span class="count">${snapshot.dlq.length}</span></h2>
+<p class="sub2">실패한 렌더링 작업을 사람이 결정할 때까지 보관합니다. 재시도는 시도 횟수를 초기화해 대기열로 되돌리고, 폐기는 행을 지우되 이벤트 로그에 사유를 남깁니다.</p>
+<table><tr><th>job</th><th>tenant</th><th>kind</th><th>attempts</th><th>waiting</th><th>last error</th><th>action</th></tr>${dlqRows}</table>
+${
+  actionsLive
+    ? '<p class="sub2">버튼은 이 API 서버의 <code>/v1/queue/dlq/{jobId}/retry|discard</code> 로 POST합니다. 폐기는 확인창을 한 번 거칩니다.</p>'
+    : '<p class="sub2">이 페이지는 파일로 내보내져 조작 API가 없습니다. <code>npm run cli -- studio --serve</code> 로 열면 원클릭 재시도/폐기가 활성화됩니다.</p>'
+}
+${
+  snapshot.dlqActions.length > 0
+    ? `<h2>Operator log</h2>
+<table><tr><th>time</th><th>action</th><th>job</th><th>result</th><th>actor</th><th>detail</th></tr>${dlqActionRows}</table>`
+    : ''
+}
+<script>
+  // 점진적 향상: JS가 없으면 form POST로 그대로 동작한다(응답은 JSON으로 보인다).
+  document.querySelectorAll('form[data-dlq]').forEach(function (form) {
+    form.addEventListener('submit', function (event) {
+      if (form.getAttribute('data-dlq') === 'discard' && !window.confirm('이 작업을 DLQ에서 폐기할까요? 되돌릴 수 없습니다.')) {
+        event.preventDefault();
+        return;
+      }
+      event.preventDefault();
+      fetch(form.action, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ actor: 'studio-console' }),
+      })
+        .then(function (response) { return response.json().catch(function () { return {}; }); })
+        .then(function (data) {
+          if (data && data.ok) { window.location.reload(); }
+          else { window.alert((data && data.message) || '요청이 거부되었습니다.'); }
+        })
+        .catch(function (error) { window.alert('요청 실패: ' + error); });
+    });
+  });
+</script>
 </body></html>
 `;
   }

@@ -10,6 +10,7 @@ use Shortform\Http\BadRequestException;
 use Shortform\Http\Request;
 use Shortform\Http\WebhookRejected;
 use Shortform\Repositories\WebhookApplyResult;
+use Shortform\Security\MetaWebhookSignatureVerifier;
 use Shortform\Tests\Support\FakePublishStore;
 use Shortform\Tests\Support\FixedClock;
 
@@ -34,7 +35,12 @@ final class PublishWebhookControllerTest extends TestCase
 
     private function controller(): PublishWebhookController
     {
-        return new PublishWebhookController($this->store, self::VERIFY_TOKEN, self::APP_SECRET, FixedClock::at());
+        return new PublishWebhookController(
+            $this->store,
+            self::VERIFY_TOKEN,
+            new MetaWebhookSignatureVerifier(self::APP_SECRET),
+            FixedClock::at(),
+        );
     }
 
     /** @param array<string,string> $query */

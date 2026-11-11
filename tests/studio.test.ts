@@ -311,10 +311,17 @@ describe('studio read API', () => {
     expect(response.status).toBe(200);
   });
 
-  it('returns 405 for writes and 404 for unknown paths', async () => {
-    const write = await h.api.handle({ method: 'POST', path: '/v1/queue/dlq/job_1/replay' });
+  it('returns 405 for a wrong method on a read route and 404 for unknown paths', async () => {
+    // 읽기 라우트는 GET 전용이다. POST로 오면 경로가 아니라 메서드가 틀린 것이므로 405.
+    const write = await h.api.handle({ method: 'POST', path: '/v1/snapshot' });
     expect(write.status).toBe(405);
     expect(write.headers?.allow).toBe('GET');
+
+    // DLQ 조작은 POST /v1/queue/dlq/{id}/{retry|discard} 두 가지뿐이다.
+    // 예전 CLI 동사(replay)는 조작 API가 아니므로 "알 수 없는 동작"으로 거부된다.
+    const legacyVerb = await h.api.handle({ method: 'POST', path: '/v1/queue/dlq/job_1/replay' });
+    expect(legacyVerb.status).toBe(404);
+    expect(legacyVerb.body).toMatchObject({ error: 'unknown_dlq_action' });
 
     const unknown = await h.api.handle({ method: 'GET', path: '/v1/nope' });
     expect(unknown.status).toBe(404);

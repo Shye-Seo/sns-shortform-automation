@@ -31,6 +31,9 @@ import { planPublishSlots, gapStatistics } from './lib/rateLimit/jitter';
 import { TenantRegistry } from './lib/rateLimit/tenantRegistry';
 import type { HookAngle } from './types/telemetry';
 import { StudioConsole } from './services/studio/console';
+import { StudioApi } from './services/studio/api';
+import { DlqActionService } from './services/studio/dlqActions';
+import { startStudioServer } from './services/studio/server';
 import { createDemoStudio } from './services/studio/demo';
 import type { Platform } from './types/render';
 import type { PublishPayload } from './types/publish';
@@ -827,36 +830,59 @@ program
 
 program
   .command('studio')
-  .description('B2B 스튜디오 모니터링 콘솔 (큐 · 워커 · 쿼터 · OAuth · 훅 A/B)')
+  .description('B2B 스튜디오 모니터링 콘솔 (큐 · 워커 · 쿼터 · OAuth · 훅 A/B · DLQ)')
   .option('--state <file>', '큐 상태 파일 (없으면 내장 데모 상태)')
   .option('--html <file>', 'HTML 대시보드 저장 경로')
+  .option('--serve', 'HTML 콘솔과 DLQ 조작 API를 HTTP로 함께 제공')
+  .option('--port <port>', 'serve 포트 (0이면 OS가 고름)', '8099')
+  .option('--host <host>', 'serve 바인딩 주소', '127.0.0.1')
   .option('--json', 'JSON 스냅샷으로 출력')
   .action(async (options) => {
     try {
-      let console: StudioConsole;
+      let studioConsole: StudioConsole;
       if (options.state) {
         const queue = new JobQueue({ store: new FileQueueStore(String(options.state)) });
-        console = new StudioConsole({
+        const registry = new TenantRegistry();
+        registry.register({ id: 'studio-demo', name: 'Studio Demo', plan: 'starter' });
+        studioConsole = new StudioConsole({
           queue,
-          tenants: (() => {
-            const registry = new TenantRegistry();
-            registry.register({ id: 'studio-demo', name: 'Studio Demo', plan: 'starter' });
-            return registry;
-          })(),
+          tenants: registry,
+          // 상태 파일을 쓰는 경우에도 조작이 가능해야 한다(실무에서 쓰는 경로).
+          dlq: new DlqActionService({ queue }),
         });
       } else {
-        console = (await createDemoStudio()).console;
+        studioConsole = (await createDemoStudio()).console;
       }
-      const snapshot = await console.snapshot();
+
+      const snapshot = await studioConsole.snapshot();
       if (options.html) {
-        await writeFile(String(options.html), console.renderHtml(snapshot), 'utf8');
+        // 파일로 여는 페이지에는 POST할 서버가 없으므로 버튼은 비활성으로 그린다.
+        await writeFile(String(options.html), studioConsole.renderHtml(snapshot, { standalone: true }), 'utf8');
       }
       if (options.json) {
         printJson(snapshot);
         return;
       }
-      process.stdout.write(console.renderText(snapshot));
+      process.stdout.write(studioConsole.renderText(snapshot));
       if (options.html) process.stdout.write(`\nHTML dashboard: ${options.html}\n`);
+
+      if (options.serve) {
+        const handle = await startStudioServer({
+          console: studioConsole,
+          api: new StudioApi(studioConsole),
+          host: String(options.host),
+          port: Number(options.port),
+          actor: 'studio-console',
+        });
+        process.stdout.write(`\n콘솔: ${handle.url}/  (DLQ 원클릭 재시도·폐기 활성)\n`);
+        process.stdout.write('Ctrl+C 로 종료\n\n');
+        const shutdown = (): void => {
+          void handle.close().finally(() => process.exit(0));
+        };
+        process.once('SIGINT', shutdown);
+        process.once('SIGTERM', shutdown);
+        return; // 서버가 프로세스를 살려 둔다
+      }
       process.stdout.write('\n');
     } catch (error) {
       fail(error);

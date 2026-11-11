@@ -135,6 +135,7 @@ export type JobEvent =
   | { type: 'failed'; at: string; job: QueueJob; error: string; willRetry: boolean }
   | { type: 'dlq'; at: string; job: QueueJob; reason: string }
   | { type: 'replayed'; at: string; job: QueueJob }
+  | { type: 'discarded'; at: string; job: QueueJob; reason: string }
   | { type: 'stalled'; at: string; job: QueueJob }
   | { type: 'deduped'; at: string; job: QueueJob };
 

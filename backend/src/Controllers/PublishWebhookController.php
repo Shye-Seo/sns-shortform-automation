@@ -9,6 +9,7 @@ use Shortform\Http\Request;
 use Shortform\Http\WebhookRejected;
 use Shortform\Repositories\PublishStore;
 use Shortform\Repositories\WebhookApplyResult;
+use Shortform\Security\MetaWebhookSignatureVerifier;
 use Shortform\Support\Clock;
 
 /**
@@ -35,7 +36,7 @@ final class PublishWebhookController
     public function __construct(
         private readonly PublishStore $store,
         private readonly string $verifyToken,
-        private readonly string $appSecret,
+        private readonly MetaWebhookSignatureVerifier $signatures,
         private readonly Clock $clock,
     ) {
     }
@@ -65,10 +66,8 @@ final class PublishWebhookController
      */
     public function receive(Request $request): array
     {
-        $signature = $request->header('x-hub-signature-256');
-        if (!$this->isSignatureValid($request->rawBody, $signature)) {
-            throw new WebhookRejected('X-Hub-Signature-256 mismatch: check IG_APP_SECRET and that the raw body was used.');
-        }
+        // Authenticate before parsing: an unsigned body must never reach the state machine.
+        $this->signatures->assertValid($request->rawBody, $request->header(MetaWebhookSignatureVerifier::HEADER));
 
         $payload = json_decode($request->rawBody, true);
         if (!is_array($payload)) {
@@ -134,13 +133,12 @@ final class PublishWebhookController
         ];
     }
 
+    /**
+     * Retained for callers that only need a boolean (health checks, tests, CLI replay).
+     * The rule itself lives in MetaWebhookSignatureVerifier.
+     */
     public function isSignatureValid(string $rawBody, ?string $header): bool
     {
-        if ($header === null || $this->appSecret === '') {
-            return false;
-        }
-        $expected = 'sha256=' . hash_hmac('sha256', $rawBody, $this->appSecret);
-
-        return hash_equals($expected, trim($header));
+        return $this->signatures->verify($rawBody, $header);
     }
 }

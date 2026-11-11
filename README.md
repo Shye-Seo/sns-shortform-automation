@@ -6,8 +6,8 @@
 그것을 **수십 개 테넌트 · 수백 편 · 플랫폼 쿼터 안에서** 안정적으로 돌리는 것은
 완전히 다른 문제입니다. 이 저장소는 두 번째 문제를 풉니다.
 
-`TypeScript` · `Node.js 20` · `ffmpeg` · `Vitest 301 tests` · `커버리지 84.3%`
-`PHP 8.2` · `MySQL 8.0` · `Meta Graph API` · `NCP SENS 알림톡` · `PHPUnit 64 tests`
+`TypeScript` · `Node.js 20` · `ffmpeg` · `Vitest 324 tests` · `커버리지 84.3%`
+`PHP 8.2` · `MySQL 8.0` · `Meta Graph API` · `NCP SENS 알림톡` · `PHPUnit 85 tests`
 
 | 계층 | 무엇을 보장하나 |
 |------|------------------|
@@ -21,7 +21,7 @@
 | **서버 계층(DB·API)** | 큐 상태·발행 기록·알림 이력이 MySQL 행으로 남고, PHP 워커가 `SKIP LOCKED`로 선점한다 |
 
 ```bash
-npm ci && npm run verify      # 301 tests, 네트워크·ffmpeg 없이
+npm ci && npm run verify      # 324 tests, 네트워크·ffmpeg 없이
 npm run cli -- studio         # 데모 콘솔 (아래 출력 참고)
 ```
 
@@ -293,7 +293,7 @@ npm run cli -- hooks --topic "부산 신혼집 3평 주방 수납 정리법"
 
 ---
 
-## 9. 스튜디오 콘솔과 읽기 API
+## 9. 스튜디오 콘솔과 조작 API
 
 `npm run cli -- studio` — 네트워크·ffmpeg 없이 내장 데모 상태로 실행됩니다.
 
@@ -336,24 +336,61 @@ HOOK A/B
     A question    41.3%  n= 6300  lift    0.0%  p 1.000
     winner: —  confidence 1.9%
 ──────────────────────────────────────────────────────────────────
-DEAD LETTER QUEUE
-  job_007  agency-morning  attempts 3  encoder OOM (worker restarted)
+DEAD LETTER QUEUE  1 job(s) need a decision
+  job_007  agency-morning  render   attempts 3/3  waiting 2m 14s
+    render-episode-07  ·  encoder OOM (worker restarted)
+  재시도/폐기: npm run cli -- queue replay <jobId> · studio --serve 로 열면 원클릭 버튼이 동작합니다
 ──────────────────────────────────────────────────────────────────
 HEALTH: 1 job(s) in DLQ · 1 non-retryable failure(s) · success rate 83.3%
 ```
 
 같은 스냅샷이 `--html .work/studio.html`(자체 CSS, 외부 CDN 없음)과 Prometheus
-(`GET /v1/metrics`)로 나옵니다. **API는 읽기 전용**입니다 — DLQ replay 같은 변경은
-CLI에만 둡니다. GET으로 큐를 되돌릴 수 있는 대시보드는 언젠가 실수로 되돌립니다.
+(`GET /v1/metrics`)로 나옵니다.
+
+**읽기 API는 GET 전용, 변경은 딱 두 개의 POST뿐입니다.** GET으로 큐를 되돌릴 수 있는
+대시보드는 메일 스캐너나 미리보기 봇이 언젠가 실수로 되돌립니다. 그래서 DLQ 조작은
+명시적 POST + 경로의 job id로만 가능하고, 어떤 작업이 바뀔 수 있는지는
+`DlqActionService`가 판단합니다.
 
 | 경로 | 내용 |
 |------|------|
-| `/v1/health` | 상태 + 사유 |
-| `/v1/queue`, `/v1/queue/dlq` | 큐 상태·격리 작업 |
-| `/v1/workers` | 워커별 처리량·활용률 |
-| `/v1/tenants/:id/limits` | 테넌트별 버킷·쿼터 잔량 |
-| `/v1/experiments/:id` | 훅 실험 판정 |
-| `/v1/metrics` | Prometheus text |
+| `GET /` | 콘솔 HTML (조작 버튼이 이 서버로 연결됨) |
+| `GET /v1/health` | 상태 + 사유 |
+| `GET /v1/queue`, `/v1/queue/dlq` | 큐 상태·격리 작업·최근 조작 기록 |
+| `GET /v1/workers` | 워커별 처리량·활용률 |
+| `GET /v1/tenants/:id/limits` | 테넌트별 버킷·쿼터 잔량 |
+| `GET /v1/experiments/:id` | 훅 실험 판정 |
+| `GET /v1/metrics` | Prometheus text |
+| `POST /v1/queue/dlq/:jobId/retry` | 재시도 (시도 횟수 초기화 후 `waiting`) |
+| `POST /v1/queue/dlq/:jobId/discard` | 폐기 (행 삭제, 이벤트 로그에 사유) |
+
+### 9.1 DLQ 원클릭 재시도 / 폐기
+
+새벽 2시에 대시보드를 보는 사람이 필요한 것은 "DLQ 7건"이 아니라 **"이 작업을 다시 돌릴까,
+버릴까"를 누를 수 있는 버튼**입니다.
+
+```bash
+npm run cli -- studio --serve            # http://127.0.0.1:8099/ — 콘솔 + 조작 API
+npm run cli -- studio --serve --port 0   # OS가 빈 포트를 고름
+```
+
+버튼을 누르면 무슨 일이 일어나는지가 제품의 신뢰를 만듭니다.
+
+| 결정 | 규칙 |
+|------|------|
+| **누가 바꿀 수 있나** | `dlq`/`failed` 상태만. `active`·`waiting`·`completed`는 거부(409) — 실수로 진행 중인 렌더를 되살리지 않는다 |
+| **재시도** | 시도 횟수·진행률·에러를 초기화하고 `waiting`으로. `attempts 3/3`이 그대로면 즉시 다시 DLQ로 간다 |
+| **폐기** | 행을 지운다. `discarded` 이벤트에 사유·행위자가 남아 감사 가능하다 |
+| **두 번 누르면** | 재시도된 작업은 `waiting`이므로 같은 요청이 409로 거부된다(멱등 거부) |
+| **기록** | 모든 시도는 `applied`/`rejected`로 남고 콘솔·API(`actions`)에서 보인다. 거부도 기록이다 |
+| **파일로 연 콘솔** | POST할 서버가 없으므로 버튼을 비활성으로 그리고 이유를 적는다(눌러도 아무 일 없는 버튼을 그리지 않는다) |
+
+```text
+$ curl -X POST localhost:8099/v1/queue/dlq/job_007/retry -d '{"actor":"seunghye"}'
+{ "ok": true, "action": "retry", "jobId": "job_007", "state": "waiting", ... }
+$ curl -X POST localhost:8099/v1/queue/dlq/job_007/retry
+{ "ok": false, "jobId": "job_007", "message": "작업 상태가 waiting입니다. ...", "retryable": false }
+```
 
 건강도: `ok` → `degraded`(DLQ 1건·비재시도 실패·쿼터 소진·성공률 <90%) →
 `critical`(DLQ ≥3·재인증 필요·성공률 <70%). DLQ 1건은 일상, DLQ가 자라는 것이 사건입니다.
@@ -438,13 +475,14 @@ npm run cli -- studio --html .work/studio.html
 ## 12. 검증
 
 ```bash
-npm run verify    # typecheck + lint + 301 tests
+npm run verify    # typecheck + lint + 324 tests
 npm run coverage  # 84.3% statements · 79.7% branches
 ```
 
 | 영역 | 파일 | 건수 |
 |------|------|------|
 | 큐 (우선순위·백오프·DLQ·lease·멱등·파일저장소) | `queue.test.ts` | 36 |
+| DLQ 재시도/폐기·조작 API·콘솔 서버 (실제 HTTP) | `dlqConsole.test.ts` | 23 |
 | 워커 풀 (동시성 상한·재시도·진행률·부하) | `workerPool.test.ts` | 18 |
 | 레이트 리밋 (버스트·리필·격리·unit 계산) | `rateLimit.test.ts` | 21 |
 | OAuth (single-flight·로테이션·영구오류) | `oauth.test.ts` | 14 |
@@ -523,7 +561,7 @@ platform built on a working 60-second shortform pipeline.
   exploration floor.
 - **Studio console** — one snapshot rendered as terminal text, a self-contained HTML page,
   Prometheus text, and a read-only JSON API.
-- **Verification** — 301 Vitest cases, 84.3% statement coverage, no network and no ffmpeg
+- **Verification** — 324 Vitest cases, 84.3% statement coverage, no network and no ffmpeg
   required (injected clock, RNG, sleep, HTTP and token refresher).
 
 ```bash
@@ -576,7 +614,7 @@ flowchart LR
 | **재시도 분류** | `retryable`이 상태를 정한다: 지수 백오프 재시도 / 즉시 실패 / DLQ |
 | **발행** | 컨테이너 → `status_code=FINISHED` 폴링 → `media_publish`. 준비 전 발행은 일일 25건 쿼터를 태운다 |
 | **토큰** | Facebook Login / Instagram Login 두 갱신 흐름 + single-flight lease(30개 예약 → 갱신 1회) |
-| **웹훅** | 원문(raw body) HMAC 검증, `last_event_id`로 재전송 차단, `applied/duplicate/unknown_media` 구분 |
+| **웹훅** | `MetaWebhookSignatureVerifier` — raw body HMAC-SHA256을 `hash_equals`로 비교(타이밍 공격 차단), SHA-1 헤더·형식 오류·시크릿 미설정은 각각 다른 사유로 fail-closed. `last_event_id`로 재전송 차단 |
 | **알림톡** | 검수된 템플릿 + 변수 치환 + dedupe 키. 알림 실패가 렌더·발행을 실패시키지 않는다 |
 
 **실행**
@@ -586,7 +624,7 @@ docker compose up -d mysql
 cd backend && composer install
 php bin/migrate.php --fresh --seed --verify     # 7 테이블 · 인덱스 · FK 확인
 php bin/worker.php --once                       # 선점 → 진행률 → 완료 → 큐 현황
-composer test                                   # 64 tests (단위 50 + MySQL 실연동 14)
+composer test                                   # 85 tests (단위 72 + MySQL 실연동 13 skip)
 ```
 
 **문서**

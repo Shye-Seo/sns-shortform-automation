@@ -429,6 +429,32 @@ export class JobQueue {
     return job;
   }
 
+  /**
+   * Operator action: give up on a DLQ/failed job.
+   *
+   * The row is removed (the job will never run again), but not silently: a
+   * `discarded` event with the reason stays in the queue event log, so the
+   * decision is auditable even though the job is gone. Only DLQ/failed jobs can
+   * be discarded — discarding a waiting or active job would erase work that is
+   * still in flight.
+   */
+  async discard(jobId: string, reason = 'discarded by operator'): Promise<QueueJob> {
+    await this.hydrate();
+    const job = await this.require(jobId);
+    if (job.state !== 'dlq' && job.state !== 'failed') {
+      throw new ShortformError(`job ${jobId} is ${job.state}; only dlq/failed jobs can be discarded`, {
+        code: 'VALIDATION',
+      });
+    }
+    const at = iso(this.now());
+    job.finishedAt = job.finishedAt ?? at;
+    job.updatedAt = at;
+    const snapshot: QueueJob = { ...job, transitions: [...job.transitions] };
+    this.emit({ type: 'discarded', at, job: snapshot, reason });
+    await this.store.delete(job.id);
+    return snapshot;
+  }
+
   async get(jobId: string): Promise<QueueJob | undefined> {
     return this.store.get(jobId);
   }
