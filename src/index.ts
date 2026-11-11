@@ -81,6 +81,27 @@ export type {
   ProjectRenderResult,
 } from './lib/queue';
 
+/* Redis queue adapter: multi-node atomic claim + driver selection */
+export {
+  RedisQueueStore,
+  redisQueueKeys,
+  createQueueStore,
+  resolveQueueDriver,
+  isReservableStore,
+  QUEUE_DRIVERS,
+  JOB_STATES,
+} from './queue/redisAdapter';
+export type {
+  RedisCommand,
+  RedisTransactionClient,
+  RedisQueueStoreOptions,
+  RedisQueueKeys,
+  ReservableQueueStore,
+  ReserveOptions,
+  QueueDriver,
+  CreateQueueStoreOptions,
+} from './queue/redisAdapter';
+
 /* Rate limiting, tenant isolation and OAuth rotation */
 export {
   RateLimitBucket,

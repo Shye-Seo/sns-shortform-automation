@@ -60,6 +60,12 @@ export interface JobQueueOptions {
   retry?: Partial<RetryPolicy>;
   /** How long a worker owns an `active` job before it is considered stalled. */
   leaseTimeoutMs?: number;
+  /**
+   * When the store can claim atomically (Redis adapter), reserve through it instead of the
+   * in-process heap. The heap is correct for one process but two processes would each hold
+   * their own idea of "next job" and render the same video twice.
+   */
+  storeReserve?: boolean;
   onEvent?: (event: JobEvent) => void;
 }
 
@@ -109,6 +115,7 @@ export class JobQueue {
   private readonly idFactory: () => string;
   private readonly retry: RetryPolicy;
   private readonly leaseTimeoutMs: number;
+  private readonly storeReserve: boolean;
   private readonly ready = new BinaryHeap<HeapEntry>(compareEntries);
   private readonly delayed = new BinaryHeap<HeapEntry>(compareDue);
   private readonly listeners = new Set<(event: JobEvent) => void>();
@@ -129,6 +136,7 @@ export class JobQueue {
       ...options.retry,
     });
     this.leaseTimeoutMs = options.leaseTimeoutMs ?? 30_000;
+    this.storeReserve = options.storeReserve ?? true;
     if (options.onEvent) this.listeners.add(options.onEvent);
   }
 
@@ -265,6 +273,17 @@ export class JobQueue {
    */
   async reserve(workerId: string): Promise<QueueJob | null> {
     if (!workerId) throw new ShortformError('workerId is required to reserve', { code: 'VALIDATION' });
+
+    // A store that can claim atomically owns the decision (see RedisQueueStore.reserve).
+    const atomic = this.store as Partial<{
+      reserve: (workerId: string, options: { now: number; leaseTimeoutMs: number }) => Promise<QueueJob | null>;
+    }>;
+    if (this.storeReserve && typeof atomic.reserve === 'function') {
+      const job = await atomic.reserve(workerId, { now: this.now(), leaseTimeoutMs: this.leaseTimeoutMs });
+      if (job) this.emit({ type: 'started', at: iso(this.now()), job });
+      return job;
+    }
+
     await this.hydrate();
     await this.promoteDelayed();
 

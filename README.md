@@ -6,7 +6,7 @@
 그것을 **수십 개 테넌트 · 수백 편 · 플랫폼 쿼터 안에서** 안정적으로 돌리는 것은
 완전히 다른 문제입니다. 이 저장소는 두 번째 문제를 풉니다.
 
-`TypeScript` · `Node.js 20` · `ffmpeg` · `Vitest 324 tests` · `커버리지 84.3%`
+`TypeScript` · `Node.js 20` · `ffmpeg` · `Vitest 348 tests` · `커버리지 84.3%`
 `PHP 8.2` · `MySQL 8.0` · `Meta Graph API` · `NCP SENS 알림톡` · `PHPUnit 85 tests`
 
 | 계층 | 무엇을 보장하나 |
@@ -21,7 +21,7 @@
 | **서버 계층(DB·API)** | 큐 상태·발행 기록·알림 이력이 MySQL 행으로 남고, PHP 워커가 `SKIP LOCKED`로 선점한다 |
 
 ```bash
-npm ci && npm run verify      # 324 tests, 네트워크·ffmpeg 없이
+npm ci && npm run verify      # 348 tests, 네트워크·ffmpeg 없이
 npm run cli -- studio         # 데모 콘솔 (아래 출력 참고)
 ```
 
@@ -103,7 +103,7 @@ flowchart TB
    재시도와 장애 복구를 검증한다.
 3. **계산과 실행 분리** — 렌더는 계획을 먼저 만들고, 실행은 워커에서만.
 
-모듈: `src/lib/queue` · `src/lib/rateLimit` · `src/lib/telemetry` · `src/services/studio`.
+모듈: `src/lib/queue` · `src/queue`(Redis 어댑터) · `src/lib/rateLimit` · `src/lib/telemetry` · `src/services/studio`.
 상세 설계와 트레이드오프는 **[docs/distributed-video-pipeline-spec.md](docs/distributed-video-pipeline-spec.md)**.
 
 ---
@@ -150,9 +150,81 @@ await queue.enqueue({
 DLQ로 갑니다. 성공/실패 시에 증가시키면 그런 job이 영원히 큐를 돕니다.
 
 **저장소**: `QueueStore` 인터페이스(`get/put/delete/all`)만 알면 됩니다. 기본은
-`InMemoryQueueStore`(테스트)와 `FileQueueStore`(CLI, 원자적 tmp→rename). Redis 어댑터는
-같은 인터페이스에 `ZADD ready` / `HSET job:{id}` / Lua `reserve`로 대응합니다 —
-**어댑터는 미구현이며, 문서에 그렇게 적혀 있습니다.**
+`InMemoryQueueStore`(테스트)와 `FileQueueStore`(CLI, 원자적 tmp→rename), 그리고 여러 노드용
+`RedisQueueStore`(`src/queue/redisAdapter.ts`)입니다.
+
+### 3.1 Redis 어댑터 — 노드가 늘어도 같은 작업을 두 번 하지 않는다
+
+`JobQueue`의 힙은 **한 프로세스** 안에서만 옳습니다. 렌더 노드가 2대가 되는 순간 각자의 힙이 같은
+`waiting` 작업을 집어가고, 같은 영상을 두 번 인코딩합니다. 되돌리는 방식(집어간 뒤 중복 감지)은 이미
+CPU를 쓴 뒤에야 알 수 있으므로, **집어가는 순간을 원자적으로** 만들어야 합니다.
+
+```ts
+import Redis from 'ioredis';
+import { RedisQueueStore } from './src/queue/redisAdapter';
+import { JobQueue } from './src/lib/queue/jobQueue';
+
+const redis = new Redis(process.env.REDIS_URL!);
+const store = new RedisQueueStore({
+  client: {
+    send: (commands) => redis.pipeline(commands.map(([cmd, ...args]) => [cmd, ...args])).exec().then((rows) => rows!.map(([err, value]) => { if (err) throw err; return value; })),
+    watch: async (keys) => { await redis.watch(...keys); },
+    multi: async (commands) => {
+      const tx = redis.multi();
+      for (const [cmd, ...args] of commands) tx.call(cmd, ...args);
+      const rows = await tx.exec();
+      return rows === null ? null : rows.map(([, value]) => value); // null = WATCH 충돌
+    },
+    unwatch: async () => { await redis.unwatch(); },
+  },
+  prefix: 'sf:queue',
+});
+
+const queue = new JobQueue({ store });   // 저장소가 선점을 지원하면 힙 대신 저장소가 결정한다
+const job = await queue.reserve('worker-3');   // 여러 노드가 동시에 불러도 서로 다른 작업
+```
+
+**원자성은 WATCH → MULTI → EXEC로 만듭니다.**
+
+```mermaid
+sequenceDiagram
+    participant W1 as worker-1
+    participant R as Redis
+    participant W2 as worker-2
+    W1->>R: WATCH ready, jobs
+    W2->>R: WATCH ready, jobs
+    W1->>R: ZRANGEBYSCORE ready -inf now LIMIT 0 1 → job_7
+    W2->>R: ZRANGEBYSCORE ready … → job_7
+    W1->>R: MULTI [ZREM ready job_7, HSET jobs …] → EXEC ✅
+    W2->>R: MULTI … → EXEC ⛔ (nil: key changed while watching)
+    W2->>R: 재시도 → ZRANGEBYSCORE → job_8
+```
+
+| 키 | 타입 | 역할 |
+| --- | --- | --- |
+| `sf:queue:jobs` | HASH | `jobId → QueueJob JSON` — 단일 진실 |
+| `sf:queue:ready` | ZSET | `id → availableAt(ms)` 실행 가능 시각 순 |
+| `sf:queue:delayed` | ZSET | 재시도·예약 대기 |
+| `sf:queue:lease` | ZSET | `id → leaseExpiresAt(ms)` active 소유 증거 |
+| `sf:queue:state:{state}` | SET | 상태별 id — `counts()`·운영 화면 |
+| `sf:queue:dedupe` | HASH | `dedupeKey → jobId` 중복 인큐 방지 |
+
+**Lua 대신 트랜잭션을 쓴 이유** — `EVAL`을 막는 관리형 Redis가 있고, 경합이 드물면 왕복 2회로 끝나며,
+무엇보다 **WATCH 충돌 의미를 테스트로 재현**할 수 있습니다. 스크립트를 흉내 내는 테스트는 스크립트가
+맞다는 것을 증명하지 못합니다.
+
+**같은 연결에서 두 선점이 겹치면** WATCH가 서로를 덮어씁니다. 그래서 어댑터는 인스턴스 안에서
+WATCH 연산을 직렬화하고, 노드를 늘릴 때는 **연결(인스턴스)을 늘리도록** 문서화했습니다. 충돌이 나면
+작은 지터 백오프를 두고 다시 고릅니다(라이브락 방지).
+
+**드라이버 선택** — `QUEUE_DRIVER=redis|file|memory`(기본 `memory`). 모르는 값은 조용히 기본값으로
+떨어지지 않고 `CONFIG` 오류로 실패합니다: 운영에서 오타 하나로 인메모리 큐가 돌면 재시작할 때 백로그가
+사라지기 때문입니다. **MySQL 기반 큐는 PHP 백엔드**(`backend/src/Repositories/ShortformRepository.php`)가
+`SELECT … FOR UPDATE SKIP LOCKED`로 담당합니다 — 잠금 규칙이 두 벌이 되지 않도록 Node 쪽 어댑터는 두지
+않았고, `QUEUE_DRIVER=mysql`은 그 사실을 알려 주는 오류를 냅니다.
+
+검증은 `tests/redisAdapter.test.ts` 24케이스입니다. 가짜 Redis가 해시·집합·정렬집합과 **WATCH 충돌
+규칙**을 실제 의미대로 구현하고, 6개 노드가 8개 작업을 동시에 노려도 중복 선점이 0건인지 확인합니다.
 
 ---
 
@@ -475,7 +547,7 @@ npm run cli -- studio --html .work/studio.html
 ## 12. 검증
 
 ```bash
-npm run verify    # typecheck + lint + 324 tests
+npm run verify    # typecheck + lint + 348 tests
 npm run coverage  # 84.3% statements · 79.7% branches
 ```
 
@@ -489,6 +561,7 @@ npm run coverage  # 84.3% statements · 79.7% branches
 | 발행 슬롯 (창·간격·분경계·재현성) | `publishSlots.test.ts` | 11 |
 | 텔레메트리 (생성·멱등·집계·검정·피드백) | `telemetry.test.ts` | 35 |
 | 콘솔/API (스냅샷·HTML 이스케이프·라우팅) | `studio.test.ts` | 19 |
+| **Redis 큐 (WATCH 원자성·6노드 경합·지연 승격·lease 회수·드라이버 선택)** | `redisAdapter.test.ts` | **24** |
 | 기존 파이프라인 (대본·자막·더킹·렌더·게시) | 8개 파일 | 147 |
 
 네트워크·ffmpeg 없이 전부 통과합니다. 외부 API는 fake HTTP와 주입된 리프레셔로,
@@ -536,7 +609,7 @@ npm run coverage  # 84.3% statements · 79.7% branches
 - [x] MySQL 8.0 `SKIP LOCKED` 기반 분산 비동기 렌더 큐 백엔드 (PHP 8.2)
 - [x] Meta Graph API 웹훅 HMAC-SHA256 서명 보안 검증 미들웨어
 - [x] Dead Letter Queue (DLQ) 원클릭 재시도 및 폐기 콘솔 UI
-- [ ] Redis 큐 어댑터 (BullMQ 연동 및 Lua 스크립트 기반 원자성 보장)
+- [x] Redis 큐 어댑터 (WATCH/MULTI/EXEC 원자적 선점 · 지연 승격 · lease 회수 · `QUEUE_DRIVER` 스위칭)
 - [ ] 실시간 렌더링 큐 시계열 메트릭 대시보드 (분당 처리량, 실패율 시각화)
 
 
@@ -565,7 +638,7 @@ platform built on a working 60-second shortform pipeline.
   exploration floor.
 - **Studio console** — one snapshot rendered as terminal text, a self-contained HTML page,
   Prometheus text, and a read-only JSON API.
-- **Verification** — 324 Vitest cases, 84.3% statement coverage, no network and no ffmpeg
+- **Verification** — 348 Vitest cases, 84.3% statement coverage, no network and no ffmpeg
   required (injected clock, RNG, sleep, HTTP and token refresher).
 
 ```bash
