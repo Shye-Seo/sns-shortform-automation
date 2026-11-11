@@ -161,6 +161,23 @@ describe('job queue scheduling and delays', () => {
     expect(await h.queue.promoteDelayed()).toBe(2);
     expect((await h.queue.counts()).waiting).toBe(2);
   });
+
+  it('does not let a high-priority job scheduled for later hide a due low-priority retry', async () => {
+    const h = harness();
+    const overnight = await h.queue.enqueue({
+      tenantId: 't1',
+      name: 'premium-slot',
+      priority: 9,
+      delayMs: 8 * 60 * 60 * 1_000,
+    });
+    const retry = await h.queue.enqueue({ tenantId: 't1', name: 'retry', priority: 1, delayMs: 1_000 });
+    expect(overnight.state).toBe('delayed');
+
+    h.advance(1_000);
+    const reserved = await h.queue.reserve('worker-1');
+    expect(reserved?.id).toBe(retry.id);
+    expect(await h.queue.nextDueAt()).toBe(START + 8 * 60 * 60 * 1_000);
+  });
 });
 
 describe('retry policy and dead letter queue', () => {

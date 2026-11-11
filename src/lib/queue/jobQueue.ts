@@ -78,6 +78,17 @@ function compareEntries(a: HeapEntry, b: HeapEntry): number {
   return a.id.localeCompare(b.id);
 }
 
+/**
+ * Delayed jobs are ordered by time only. Ordering them by priority would let a
+ * high-priority job scheduled for tomorrow morning sit at the top of the heap
+ * and hide a low-priority retry that is already due.
+ */
+function compareDue(a: HeapEntry, b: HeapEntry): number {
+  if (a.availableAtMs !== b.availableAtMs) return a.availableAtMs - b.availableAtMs;
+  if (a.createdAtMs !== b.createdAtMs) return a.createdAtMs - b.createdAtMs;
+  return a.id.localeCompare(b.id);
+}
+
 function iso(ms: number): string {
   return new Date(ms).toISOString();
 }
@@ -99,7 +110,7 @@ export class JobQueue {
   private readonly retry: RetryPolicy;
   private readonly leaseTimeoutMs: number;
   private readonly ready = new BinaryHeap<HeapEntry>(compareEntries);
-  private readonly delayed = new BinaryHeap<HeapEntry>(compareEntries);
+  private readonly delayed = new BinaryHeap<HeapEntry>(compareDue);
   private readonly listeners = new Set<(event: JobEvent) => void>();
   private readonly eventLog: JobEvent[] = [];
   /** Indexes are rebuilt once from the store, so a restarted worker resumes a persisted backlog. */
@@ -231,14 +242,16 @@ export class JobQueue {
     let promoted = 0;
     for (;;) {
       const next = this.delayed.peek();
-      if (!next || next.availableAtMs > nowMs) break;
-      this.delayed.pop();
+      if (!next) break;
       const job = await this.store.get(next.id);
-      if (!job || job.state !== 'delayed') continue;
-      if (msOf(job.availableAt) > nowMs) {
-        this.delayed.push(this.entry(job));
-        break;
+      // A stale entry (job re-delayed to a new time) is dropped, not re-pushed:
+      // the reschedule already pushed an entry with the current availableAt.
+      if (!job || job.state !== 'delayed' || msOf(job.availableAt) !== next.availableAtMs) {
+        this.delayed.pop();
+        continue;
       }
+      if (next.availableAtMs > nowMs) break;
+      this.delayed.pop();
       await this.transition(job, 'waiting', 'delay elapsed');
       this.ready.push(this.entry(job));
       promoted += 1;
@@ -440,11 +453,11 @@ export class JobQueue {
       const next = this.delayed.peek();
       if (!next) return null;
       const job = await this.store.get(next.id);
-      if (!job || job.state !== 'delayed') {
+      if (!job || job.state !== 'delayed' || msOf(job.availableAt) !== next.availableAtMs) {
         this.delayed.pop();
         continue;
       }
-      return msOf(job.availableAt);
+      return next.availableAtMs;
     }
   }
 

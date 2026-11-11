@@ -4,7 +4,7 @@
 > 설계 명세입니다. 코드가 "무엇을 하는가"는 README에, "왜 이렇게 했는가"와 "무엇을
 > 보장하지 않는가"는 여기에 적습니다.
 >
-> 검증 기준: `npm run verify` (TypeScript strict + ESLint + Vitest 299건) · 2026-11-11
+> 검증 기준: `npm run verify` (TypeScript strict + ESLint + Vitest 300건) · 2026-11-11
 
 ---
 
@@ -361,12 +361,12 @@ DLQ가 자라는 것이 사건입니다.
 ```bash
 npm ci
 npm run verify   # typecheck + lint + vitest
-npm run coverage # 84.3% statements / 79.6% branches
+npm run coverage # 84.3% statements / 79.7% branches
 ```
 
 | 영역 | 테스트 파일 | 건수 | 고정한 것 |
 |------|-------------|------|-----------|
-| 큐 | `queue.test.ts` | 35 | 우선순위, 지연, 백오프 1·2·4s, DLQ, replay, lease 만료, 멱등, 파일 저장소 |
+| 큐 | `queue.test.ts` | 36 | 우선순위, 지연, 백오프 1·2·4s, DLQ, replay, lease 만료, 멱등, 파일 저장소 |
 | 워커 | `workerPool.test.ts` | 17 | 동시성 상한, 재시도, 진행률, 워커별 부하, 드레인 한도 |
 | 레이트 리밋 | `rateLimit.test.ts` | 21 | 버스트/리필, 429 패널티, 테넌트 격리, YouTube unit 계산 |
 | OAuth | `oauth.test.ts` | 14 | single-flight, 로테이션, 영구/일시 오류, 테넌트 격리 |
@@ -375,7 +375,7 @@ npm run coverage # 84.3% statements / 79.6% branches
 | 콘솔 | `studio.test.ts` | 19 | 스냅샷, HTML 이스케이프, Prometheus, API 라우팅 |
 | 기존 파이프라인 | 8개 파일 | 147 | 대본·자막·더킹·렌더·프리플라이트·게시 |
 
-299건 전부 통과. 네트워크·ffmpeg 없이 돕니다.
+300건 전부 통과. 네트워크·ffmpeg 없이 돕니다.
 
 ---
 
