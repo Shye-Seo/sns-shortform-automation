@@ -6,7 +6,7 @@
 그것을 **수십 개 테넌트 · 수백 편 · 플랫폼 쿼터 안에서** 안정적으로 돌리는 것은
 완전히 다른 문제입니다. 이 저장소는 두 번째 문제를 풉니다.
 
-`TypeScript` · `Node.js 20` · `ffmpeg` · `Vitest 372 tests` · `커버리지 84.3%`
+`TypeScript` · `Node.js 20` · `ffmpeg` · `Vitest 372 tests` · `커버리지 86.0%`
 `PHP 8.2` · `MySQL 8.0` · `Meta Graph API` · `NCP SENS 알림톡` · `PHPUnit 85 tests`
 
 | 계층 | 무엇을 보장하나 |
@@ -582,7 +582,7 @@ npm run cli -- studio --html .work/studio.html
 
 ```bash
 npm run verify    # typecheck + lint + 372 tests
-npm run coverage  # 84.3% statements · 79.7% branches
+npm run coverage  # 86.0% statements · 80.4% branches
 ```
 
 | 영역 | 파일 | 건수 |
@@ -673,7 +673,7 @@ platform built on a working 60-second shortform pipeline.
   exploration floor.
 - **Studio console** — one snapshot rendered as terminal text, a self-contained HTML page,
   Prometheus text, and a read-only JSON API.
-- **Verification** — 372 Vitest cases, 84.3% statement coverage, no network and no ffmpeg
+- **Verification** — 372 Vitest cases, 86.0% statement coverage, no network and no ffmpeg
   required (injected clock, RNG, sleep, HTTP and token refresher).
 
 ```bash
