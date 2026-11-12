@@ -6,8 +6,8 @@
 그것을 **수십 개 테넌트 · 수백 편 · 플랫폼 쿼터 안에서** 안정적으로 돌리는 것은
 완전히 다른 문제입니다. 이 저장소는 두 번째 문제를 풉니다.
 
-`TypeScript` · `Node.js 20` · `ffmpeg` · `Vitest 372 tests` · `커버리지 86.0%`
-`PHP 8.2` · `MySQL 8.0` · `Meta Graph API` · `NCP SENS 알림톡` · `PHPUnit 85 tests`
+`TypeScript` · `Node.js 20` · `ffmpeg` · `Vitest 413 tests` · `커버리지 86.0%`
+`PHP 8.2` · `MySQL 8.0` · `Meta Graph API` · `NCP SENS 알림톡` · `PHPUnit 125 tests`
 
 | 계층 | 무엇을 보장하나 |
 |------|------------------|
@@ -21,7 +21,7 @@
 | **서버 계층(DB·API)** | 큐 상태·발행 기록·알림 이력이 MySQL 행으로 남고, PHP 워커가 `SKIP LOCKED`로 선점한다 |
 
 ```bash
-npm ci && npm run verify      # 372 tests, 네트워크·ffmpeg 없이
+npm ci && npm run verify      # 413 tests, 네트워크·ffmpeg 없이
 npm run cli -- studio         # 데모 콘솔 (아래 출력 참고)
 ```
 
@@ -581,7 +581,7 @@ npm run cli -- studio --html .work/studio.html
 ## 12. 검증
 
 ```bash
-npm run verify    # typecheck + lint + 372 tests
+npm run verify    # typecheck + lint + 413 tests
 npm run coverage  # 86.0% statements · 80.4% branches
 ```
 
@@ -673,7 +673,7 @@ platform built on a working 60-second shortform pipeline.
   exploration floor.
 - **Studio console** — one snapshot rendered as terminal text, a self-contained HTML page,
   Prometheus text, and a read-only JSON API.
-- **Verification** — 372 Vitest cases, 86.0% statement coverage, no network and no ffmpeg
+- **Verification** — 413 Vitest cases, 86.0% statement coverage, no network and no ffmpeg
   required (injected clock, RNG, sleep, HTTP and token refresher).
 
 ```bash
@@ -736,7 +736,7 @@ docker compose up -d mysql
 cd backend && composer install
 php bin/migrate.php --fresh --seed --verify     # 7 테이블 · 인덱스 · FK 확인
 php bin/worker.php --once                       # 선점 → 진행률 → 완료 → 큐 현황
-composer test                                   # 85 tests (단위 72 + MySQL 실연동 13 skip)
+composer test                                   # 125 tests (단위 112 + MySQL 실연동 13 skip)
 ```
 
 **문서**
@@ -745,6 +745,134 @@ composer test                                   # 85 tests (단위 72 + MySQL �
   인덱싱 전략(`(state, priority DESC, available_at, id)` 등), 타입 선택 근거, 운영 쿼리
 - [`backend/README.md`](backend/README.md) — API 계약, Graph API 재시도 분류표, 토큰 2흐름,
   웹훅 서명, SENS 서명 함정 3가지, 테스트 목록
+
+## 17. 인터랙티브 숏폼 드롭 — 댓글 → 5초 쿠폰 디스패치
+
+> 1부가 "영상 1편을 만들어 예약 발행하는 일"이라면, 이 파트는 **발행한 영상이 만든 트래픽을
+> 돈으로 바꾸는 일**입니다. 릴스 댓글에 '할인'이라고 쓴 사람에게 **5초 안에** 1회용 쿠폰
+> 딥링크를 보내고, 그 링크가 결제로 이어졌는지(ROAS)까지 셉니다.
+
+### 17.1 왜 숏폼에 이 계층이 필요한가
+
+댓글 이벤트는 **재전송되고, 몰리고, 위조됩니다.** 이 세 가지가 기능보다 먼저입니다.
+
+| 실제로 터지는 일 | 결과 | 이 저장소의 답 |
+| --- | --- | --- |
+| Meta가 같은 댓글 웹훅을 5번 보냄 | 쿠폰 5장 | `external_event_id` UNIQUE + 처리 상태 기록 |
+| 웹훅 안에서 DM 발송(0.8초)을 기다림 | Meta 타임아웃 → 재전송 폭풍 | 접수(웹훅)와 발송(워커) 분리, `dispatch_deadline_at` 5초 |
+| 워커가 죽었다 살아남 | 같은 사람에게 DM 2번 | `idempotency_key`(이벤트×채널×수신자) UNIQUE |
+| 실패가 무한 재시도 | 쿼터 소진 | 지수 백오프 + `DEAD_LETTER` 분리 |
+| 딥링크가 단톡방에 뿌려짐 | 여러 명이 한 링크 사용 | 1회용 토큰 + `claim_count` compare-and-set |
+| DB 덤프로 링크 위조 | 무한 쿠폰 | 원문 토큰 미저장 + HMAC-SHA256 서명 |
+| 매크로가 '할인' 3,000번 | 예산 소진 | 작성자 버스트·서브넷·신규계정·스팸문구 점수 |
+
+### 17.2 파이프라인과 5초 예산
+
+```
+Meta 웹훅 (X-Hub-Signature-256)
+   │ ① 서명 검증 (raw body 기준 HMAC-SHA256)            ~1ms
+   ▼
+② 파싱: object=instagram → entry[].changes[].value      ~2ms
+   ▼
+③ 캠페인 매칭: platform + content_ref (인덱스)          ~1ms
+   │    키워드 매칭(정규화 후 부분일치 — 한국어 조사 대응)
+   ▼
+④ 멱등 INSERT: external_event_id UNIQUE                 ~2ms  → 중복이면 200 응답(재전송 종료)
+   ▼
+⑤ 어뷰징 점수(작성자·서브넷·신규·문구)                   ~2ms  → 50점 이상이면 REJECTED
+   ▼
+⑥ dispatch_queue INSERT (PENDING, deadline=now+5s)      ~2ms
+   │  ── 여기까지가 웹훅 응답 경로: 10ms 이내 ──
+   ▼
+⑦ 워커: 토큰 발급(HMAC) → DM/알림톡 발송 → DISPATCHED    ~300~800ms
+   ▼
+⑧ 실패 시 RETRY(1s→2s→4s) → 데드라인 초과 시 DEAD_LETTER
+```
+
+**웹훅 경로에서 발송하지 않는 이유**: Meta는 5초 안에 200을 못 받으면 같은 이벤트를 최대 24시간
+재전송합니다. 발송을 인라인으로 넣으면 재전송이 다시 발송을 유발해 "한 사람에게 쿠폰 3장"이 됩니다.
+사용자 체감 SLA 5초는 `dispatch_deadline_at`으로 관리하고, 데드라인을 넘긴 건은 **늦게라도 보내지
+않습니다**(이미 앱을 떠난 사용자에게 늦은 쿠폰은 CS 비용만 만듭니다).
+
+### 17.3 멱등성 3중 방어
+
+| 계층 | 장치 | 막는 것 |
+| --- | --- | --- |
+| 1 | `webhook_interaction_events.external_event_id` UNIQUE | 같은 댓글 웹훅 재전송 |
+| 2 | `dispatch_queue.idempotency_key` UNIQUE | 워커 재시작·중복 선점 |
+| 3 | `instant_claim_tokens.claim_count = 0` CAS | 링크 더블클릭·동시 사용 |
+
+1번만 있으면 워커 재시작 시 다시 발송할 수 있고, 2번만 있으면 재전송 웹훅이 이벤트 행을 두 개
+만듭니다. 3번은 발송이 아니라 **사용**을 막는 층입니다. 서로 다른 실패 모드라 하나로 합칠 수 없습니다.
+
+### 17.4 1회용 토큰 — 원문은 저장하지 않는다
+
+```
+링크   https://coupon.shye.kr/c/{uuid}.{secret}
+저장   token_uuid(공개) · token_hash = SHA-256(전체) · signature = HMAC-SHA256(key, "uuid|expiresAt")
+검증   해시로 조회 → 서명 검증 → claim_count=0 CAS → 성공
+TTL    15분 (캠페인 설정)
+```
+
+- 원문을 저장하지 않으므로 DB 덤프로 링크를 위조할 수 없습니다.
+- 서명 키는 **회전 가능**합니다(`HmacTokenSigner`가 키 목록을 받음). TTL 15분 동안 이전 키를 함께
+  허용해야 이미 나간 링크가 죽지 않습니다.
+- 검증은 `hash_equals`(상수 시간)로 합니다. `===`는 첫 바이트에서 끊겨 서명을 한 바이트씩 맞춰볼 수 있습니다.
+
+### 17.5 어뷰징 점수 (댓글 도메인)
+
+| 신호 | 가중치 | 근거 |
+| --- | --- | --- |
+| 같은 작성자 10초에 3건 이상 | +40 | 사람이 손으로 하기 어려운 속도 |
+| 같은 /24 서브넷 10초에 20건 이상 | +30 | 매크로 팜은 계정을 바꾸고 IP 대역은 유지 |
+| 가입 24시간 이내 계정 | +20 | 대량 생성 계정 |
+| 본문 3자 미만 또는 동일 문구 5회 이상 | +15 | '할인'만 수천 번 |
+| 레이트 리밋 초과 | +35 | 스크립트 연타 |
+
+50점 이상이면 발송하지 않고, **차단된 건은 예산을 쓰지 않습니다**(예산 검사보다 앞에서 거른다).
+
+### 17.6 실측 — 댓글 1,000건 폭주
+
+같은 엔진을 Node에서 실제로 돌린 결과입니다(네트워크 없음, 시드 고정).
+
+```bash
+npx tsx -e "...simulateCommentStorm({ comments: 1000, concurrency: 256, clickRate: 0.7, abuseRate: 0.05 })"
+```
+
+| 항목 | 값 |
+| --- | --- |
+| 접수 댓글 | 1,000건 (초당 약 17,000건 처리 — 순수 인프로세스) |
+| 어뷰징 차단 | 41건 |
+| 발송(DISPATCHED) | 500건 (발급 한도 500장) |
+| 수령(GRANTED) | 349건 |
+| **오버이슈** | **0건** (풀 잔여 151장, 보존식 유지) |
+| 풀 경합(대기) | 347회 — 동시 수령에서 락 대기가 실제로 발생했고, 전부 직렬화됨 |
+
+`tests/interactiveCouponDispatcher.test.ts`가 이 수치를 테스트로 고정합니다(1,000건 동시 수령 →
+100장 풀에서 정확히 100장, 오버이슈 0건).
+
+### 17.7 코드 지도
+
+| 계층 | 파일 | 역할 |
+| --- | --- | --- |
+| 코어 엔진 | `src/core/interactiveCouponDispatcher.ts` | 파서·키워드 정규화·멱등·5초 SLA·DLQ·1회용 토큰·퍼널/ROAS·폭주 시뮬레이터 |
+| 콘솔(React) | `src/ui/InteractivePromotionConsole.tsx` | 웹훅 접수·발송·SLA·퍼널·DLQ·시뮬레이션 카드 |
+| 백엔드 | `backend/src/Services/InteractiveCouponDispatcher.php` | 웹훅 수신→큐 적재→워커 발송→수령 검증 |
+| 백엔드 | `backend/src/Services/FraudDetectionService.php` | 작성자/서브넷/신규/문구 점수 |
+| 보안 | `backend/src/Security/HmacTokenSigner.php` | HMAC-SHA256 서명·키 회전·`hash_equals` |
+| 스키마 | `database/schema.sql` §8~12 | 캠페인·웹훅 이벤트·발송 큐·1회용 토큰·전환 퍼널 5테이블 |
+| 설계서 | `database/ERD_SPEC.md` §9~15 | ERD·5초 시간 예산·멱등 3중 방어·어뷰징·운영 쿼리 |
+
+### 17.8 정직한 경계
+
+- **실발송은 검증 범위 밖**입니다. Meta DM·네이버클라우드 SENS 실호출은 자격 증명이 없어, 어댑터
+  인터페이스·서명 벡터·실패 분류까지가 검증 범위입니다.
+- **HMAC-SHA256은 양쪽 구현이 같은 함수**임을 테스트 벡터로 확인했습니다(TS 구현이 RFC 벡터와 일치,
+  PHP는 `hash_hmac`). 다만 키 관리(KMS·회전 주기)는 문서화만 되어 있고 실제 KMS 연동은 없습니다.
+- 위 17.6의 초당 처리량은 **인프로세스 시뮬레이션**입니다. 실제 Meta 웹훅 처리량은 네트워크·DB가
+  결정하며, 이 수치를 운영 TPS로 주장하지 않습니다.
+
+---
 
 ## 작성자
 

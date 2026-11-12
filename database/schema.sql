@@ -321,3 +321,244 @@ CREATE TABLE alimtalk_notifications (
     ON DELETE SET NULL ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
   COMMENT='SENS 알림톡 발송·도달 이력(멱등 키)';
+
+-- =============================================================================
+-- 2부 · 숏폼 인터랙티브 실시간 응모 & 토스형 즉시 할인쿠폰 디스패치
+-- =============================================================================
+-- 왜 이 계층이 필요한가
+--   1부는 "영상 1편을 만들어 예약 발행하는 일"을 자동화한다. 그 다음 문제는
+--   **발행한 영상이 만든 트래픽을 돈으로 바꾸는 일**이다. 인스타 릴스 댓글에
+--   '할인'이라고 쓴 사람에게 5초 안에 1회용 쿠폰 딥링크를 보내고, 그 링크가
+--   실제 결제로 이어졌는지(ROAS)까지 세는 것이 이 파트의 목표다.
+--
+-- 이 파트가 지키는 네 가지
+--   1) 웹훅은 **재전송된다**. Meta는 응답이 늦으면 같은 이벤트를 다시 보낸다.
+--      external_event_id UNIQUE가 같은 댓글로 두 번 쿠폰을 보내지 않게 막는다.
+--   2) 발송은 **5초 SLA**다. 큐에 인큐만 하고 응답하면 사용자는 댓글을 쓴 뒤
+--      30초를 기다린다. 그래서 dispatch_deadline_at을 행에 박고, 지연분은
+--      DEAD_LETTER로 분리해 원인을 센다.
+--   3) 딥링크 토큰은 **1회용·15분 TTL**이다. token_hash(UNIQUE)로만 검증하고
+--      원문 토큰은 저장하지 않는다. 링크가 단톡방에 뿌려져도 두 번 쓸 수 없다.
+--   4) 전환은 **단계별로 남긴다**(노출→클릭→수령→구매). 마지막 값만 저장하면
+--      "어디서 새는지"를 알 수 없고, ROAS를 계산할 근거도 사라진다.
+-- =============================================================================
+
+-- -----------------------------------------------------------------------------
+-- 8. interactive_campaigns — 숏폼 연계 프로모션
+-- -----------------------------------------------------------------------------
+-- 트리거 키워드는 JSON 배열이다('할인', '선착순', '쿠폰' …). 별 테이블로 정규화하지
+-- 않은 이유: 키워드는 캠페인과 함께 읽고 함께 바뀌는 값이고(부분 갱신 없음),
+-- 조회는 항상 "이 캠페인의 키워드 집합" 단위다. 대신 키워드 매칭 결과는
+-- webhook_interaction_events.matched_keyword에 남겨 집계가 가능하게 한다.
+--
+-- total_reward_budget은 "이 캠페인에서 나갈 수 있는 총 할인액"이다. 장수(claim_limit)와
+-- 따로 두는 이유는 1부와 같다 — 쿠폰 종류가 섞이면 장수만으로 예산을 통제할 수 없다.
+-- -----------------------------------------------------------------------------
+CREATE TABLE interactive_campaigns (
+  id                  BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '캠페인 PK',
+  tenant_id           BIGINT UNSIGNED NOT NULL                COMMENT '소유 테넌트(대행사)',
+  project_id          BIGINT UNSIGNED NULL                    COMMENT '연결된 숏폼 프로젝트(shortform_projects)',
+  code                VARCHAR(40)     NOT NULL                COMMENT '캠페인 코드(reels-drop-2026-11)',
+  name                VARCHAR(120)    NOT NULL                COMMENT '캠페인명(운영 콘솔 표기)',
+  platform            ENUM('instagram','youtube') NOT NULL    COMMENT '트리거가 발생하는 플랫폼',
+  content_ref         VARCHAR(80)     NOT NULL                COMMENT '대상 콘텐츠 ID(릴스 media_id / 쇼츠 video_id)',
+  trigger_keywords    JSON            NOT NULL                COMMENT '트리거 키워드 배열(["할인","선착순"])',
+  reward_label        VARCHAR(80)     NOT NULL                COMMENT '리워드 표기(3,000원 즉시 할인)',
+  reward_amount       INT UNSIGNED    NOT NULL DEFAULT 0      COMMENT '1인당 리워드 금액(원). 예산 계산 기준',
+  total_reward_budget INT UNSIGNED    NOT NULL DEFAULT 0      COMMENT '총 리워드 예산(원). 0이면 무제한(비권장)',
+  claim_limit         INT UNSIGNED    NOT NULL DEFAULT 0      COMMENT '발급 가능 총 장수. 0이면 무제한',
+  max_claims_per_user TINYINT UNSIGNED NOT NULL DEFAULT 1     COMMENT '1인당 발급 가능 수(다계정 어뷰징 기준)',
+  token_ttl_minutes   SMALLINT UNSIGNED NOT NULL DEFAULT 15   COMMENT '딥링크 토큰 유효 시간(분)',
+  starts_at           DATETIME(3)     NOT NULL                COMMENT '시작 시각(KST)',
+  ends_at             DATETIME(3)     NOT NULL                COMMENT '종료 시각(KST)',
+  status              ENUM('draft','scheduled','live','paused','ended') NOT NULL DEFAULT 'draft'
+                      COMMENT 'draft=작성, scheduled=대기, live=진행, paused=일시정지, ended=종료',
+  created_at          DATETIME(3)     NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  updated_at          DATETIME(3)     NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
+  PRIMARY KEY (id),
+  UNIQUE KEY uq_interactive_campaigns_code (tenant_id, code) COMMENT '테넌트 내 캠페인 코드 유일',
+  KEY idx_interactive_campaigns_live (status, starts_at, ends_at) COMMENT '스케줄러: 지금 살아있는 캠페인',
+  KEY idx_interactive_campaigns_content (platform, content_ref) COMMENT '웹훅 수신 시 콘텐츠로 캠페인 역조회',
+  CONSTRAINT fk_interactive_campaigns_tenant FOREIGN KEY (tenant_id) REFERENCES tenants (id)
+    ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT fk_interactive_campaigns_project FOREIGN KEY (project_id) REFERENCES shortform_projects (id)
+    ON DELETE SET NULL ON UPDATE CASCADE,
+  CONSTRAINT chk_interactive_campaigns_window CHECK (ends_at > starts_at),
+  CONSTRAINT chk_interactive_campaigns_ttl CHECK (token_ttl_minutes BETWEEN 1 AND 1440),
+  CONSTRAINT chk_interactive_campaigns_budget CHECK (max_claims_per_user >= 1)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
+  COMMENT='숏폼 연계 인터랙티브 프로모션(트리거 키워드·예산·1회용 토큰 TTL)';
+
+-- -----------------------------------------------------------------------------
+-- 9. webhook_interaction_events — 웹훅 이벤트 스트림 원본 + 파싱 로그
+-- -----------------------------------------------------------------------------
+-- Meta Graph 웹훅은 **서명 검증 → 파싱 → 멱등 확인 → 큐 적재**의 순서로 처리한다.
+-- 이 테이블은 그 네 단계의 결과를 모두 남긴다.
+--   · signature_verified — 서명이 틀렸는데 처리했는지 사후에 알 수 있어야 한다
+--   · processing_status — 어느 단계에서 멈췄는지(파싱 실패·키워드 불일치·중복)
+--   · raw_payload JSON — 원본을 남긴다. Meta 포맷은 예고 없이 바뀌고, 파서 버그를
+--     재현하려면 원본이 있어야 한다(개인정보는 해시·최소 필드만).
+--
+-- external_event_id UNIQUE가 재전송 방어선이다. Meta는 200을 못 받으면 같은
+-- 댓글 이벤트를 최대 수 시간 재전송하므로, 애플리케이션 if문만으로는 부족하다.
+-- author_platform_id는 HMAC으로 저장한다(원문 ID를 남기면 개인 식별자가 된다).
+-- -----------------------------------------------------------------------------
+CREATE TABLE webhook_interaction_events (
+  id                  BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '이벤트 PK',
+  campaign_id         BIGINT UNSIGNED NULL                    COMMENT '매칭된 캠페인(키워드 불일치면 NULL)',
+  tenant_id           BIGINT UNSIGNED NOT NULL                COMMENT '테넌트(라우팅 결과)',
+  platform            ENUM('instagram','youtube') NOT NULL    COMMENT '이벤트 발생 플랫폼',
+  external_event_id   VARCHAR(120)    NOT NULL                COMMENT '플랫폼 이벤트 ID(댓글 ID). UNIQUE — 재전송 방어',
+  event_type          ENUM('comment','dm','mention') NOT NULL DEFAULT 'comment' COMMENT '이벤트 종류',
+  content_ref         VARCHAR(80)     NOT NULL                COMMENT '대상 콘텐츠 ID(media_id/video_id)',
+  author_platform_id  CHAR(64)        NOT NULL                COMMENT '작성자 플랫폼 ID의 HMAC-SHA256(원문 저장 금지)',
+  author_handle       CHAR(64)        NULL                    COMMENT '작성자 핸들 HMAC. 표시가 필요하면 별도 마스킹',
+  message_text        VARCHAR(500)    NOT NULL DEFAULT ''     COMMENT '댓글 본문(최대 500자). 키워드 매칭에만 쓴다',
+  matched_keyword     VARCHAR(40)     NULL                    COMMENT '매칭된 트리거 키워드',
+  signature_verified  TINYINT(1)      NOT NULL DEFAULT 0      COMMENT '1=Meta X-Hub-Signature-256 검증 통과',
+  processing_status   ENUM('RECEIVED','PARSED','QUEUED','DISPATCHED','IGNORED','REJECTED','DUPLICATE')
+                      NOT NULL DEFAULT 'RECEIVED'             COMMENT '처리 단계. IGNORED=키워드 불일치, REJECTED=서명/어뷰징',
+  rejection_reason    VARCHAR(120)    NULL                    COMMENT '거절 사유(BAD_SIGNATURE, NO_KEYWORD, ABUSE…)',
+  raw_payload         JSON            NULL                    COMMENT '원본 페이로드(파서 재현용)',
+  received_at         DATETIME(3)     NOT NULL DEFAULT CURRENT_TIMESTAMP(3) COMMENT '수신 시각',
+  processed_at        DATETIME(3)     NULL                    COMMENT '처리 완료 시각',
+  PRIMARY KEY (id),
+  UNIQUE KEY uq_webhook_external_event (external_event_id) COMMENT '재전송 방어: 같은 댓글은 한 행',
+  KEY idx_webhook_campaign_status (campaign_id, processing_status, received_at) COMMENT '캠페인별 처리 현황·지연',
+  KEY idx_webhook_author (author_platform_id, received_at) COMMENT '다계정/도배 탐지',
+  KEY idx_webhook_status_received (processing_status, received_at) COMMENT '재처리 워커(Failed/Received)',
+  CONSTRAINT fk_webhook_campaign FOREIGN KEY (campaign_id) REFERENCES interactive_campaigns (id)
+    ON DELETE SET NULL ON UPDATE CASCADE,
+  CONSTRAINT fk_webhook_tenant FOREIGN KEY (tenant_id) REFERENCES tenants (id)
+    ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT chk_webhook_text_length CHECK (CHAR_LENGTH(message_text) <= 500)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
+  COMMENT='숏폼 댓글/멘션 웹훅 원본과 파싱·멱등·서명 검증 로그';
+
+-- -----------------------------------------------------------------------------
+-- 10. dispatch_queue — 알림톡/DM 5초 내 즉시 발송 큐
+-- -----------------------------------------------------------------------------
+-- 5초 SLA를 지키려면 "큐에 넣고 응답"이 아니라 "큐에 넣고 **데드라인을 박은 뒤**
+-- 워커가 즉시 집어가는 구조"여야 한다. 그래서 행에 dispatch_deadline_at이 있다.
+--
+-- 상태 전이: PENDING → DISPATCHED | FAILED → RETRY → DEAD_LETTER
+--   · PENDING에서 available_at이 지나야 워커가 집는다(즉시 재시도 폭주 방지)
+--   · RETRY는 지수 백오프(1s, 2s, 4s …) 후 다시 PENDING처럼 동작한다
+--   · 데드라인을 넘긴 실패는 DEAD_LETTER로 분리한다. 여기 남은 건은 사람이 봐야 한다
+--
+-- idempotency_key UNIQUE가 핵심이다. "이 이벤트 → 이 채널 → 이 수신자"는 한 번만
+-- 발송된다. 워커가 죽어서 재시작해도 같은 키로는 두 번 나가지 않는다.
+-- -----------------------------------------------------------------------------
+CREATE TABLE dispatch_queue (
+  id                   BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '발송 큐 PK',
+  campaign_id          BIGINT UNSIGNED NOT NULL                COMMENT '대상 캠페인',
+  interaction_event_id BIGINT UNSIGNED NOT NULL                COMMENT '계기가 된 웹훅 이벤트',
+  claim_token_id       BIGINT UNSIGNED NULL                    COMMENT '발급한 1회용 토큰(생성 후 연결)',
+  channel              ENUM('ALIMTALK','INSTAGRAM_DM') NOT NULL COMMENT '발송 채널',
+  recipient_ref        VARCHAR(120)    NOT NULL                COMMENT '수신자 참조(해시된 플랫폼 ID 또는 마스킹 번호)',
+  idempotency_key      VARCHAR(120)    NOT NULL                COMMENT '중복 발송 차단 키. UNIQUE',
+  status               ENUM('PENDING','DISPATCHED','FAILED','RETRY','DEAD_LETTER') NOT NULL DEFAULT 'PENDING'
+                       COMMENT 'PENDING=대기, DISPATCHED=발송, FAILED=실패, RETRY=재시도 대기, DEAD_LETTER=포기',
+  attempts             TINYINT UNSIGNED NOT NULL DEFAULT 0     COMMENT '발송 시도 횟수',
+  available_at         DATETIME(3)     NOT NULL DEFAULT CURRENT_TIMESTAMP(3) COMMENT '다음 시도 가능 시각(백오프)',
+  dispatch_deadline_at DATETIME(3)     NOT NULL                COMMENT '5초 SLA 데드라인. 넘기면 DEAD_LETTER',
+  dispatched_at        DATETIME(3)     NULL                    COMMENT '실제 발송 시각',
+  dead_letter_at       DATETIME(3)     NULL                    COMMENT '포기 처리 시각',
+  last_error           VARCHAR(300)    NULL                    COMMENT '마지막 실패 사유(플랫폼 오류 코드 포함)',
+  payload              JSON            NULL                    COMMENT '발송 본문(딥링크 URL·템플릿 인자)',
+  created_at           DATETIME(3)     NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  updated_at           DATETIME(3)     NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
+  PRIMARY KEY (id),
+  UNIQUE KEY uq_dispatch_idempotency (idempotency_key) COMMENT '이벤트×채널×수신자 1회 발송',
+  KEY idx_dispatch_ready (status, available_at) COMMENT '워커: PENDING/RETRY 중 시도 가능한 행',
+  KEY idx_dispatch_campaign (campaign_id, status) COMMENT '캠페인별 발송 현황',
+  KEY idx_dispatch_deadline (status, dispatch_deadline_at) COMMENT 'SLA 초과 스캔',
+  CONSTRAINT fk_dispatch_campaign FOREIGN KEY (campaign_id) REFERENCES interactive_campaigns (id)
+    ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT fk_dispatch_event FOREIGN KEY (interaction_event_id) REFERENCES webhook_interaction_events (id)
+    ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT chk_dispatch_attempts CHECK (attempts <= 10),
+  CONSTRAINT chk_dispatch_deadline CHECK (dispatch_deadline_at >= created_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
+  COMMENT='숏폼 댓글 → 즉시 쿠폰 발송 큐(5초 SLA·백오프·DLQ)';
+
+-- -----------------------------------------------------------------------------
+-- 11. instant_claim_tokens — HMAC-SHA256 서명된 1회용 딥링크 토큰
+-- -----------------------------------------------------------------------------
+-- 딥링크는 문자/카톡으로 나가고, 받은 사람은 캡처해서 단톡방에 뿌린다. 그래서
+-- 토큰은 반드시 **1회용 + 짧은 TTL**이어야 한다.
+--
+-- 저장 원칙
+--   · token_uuid — 링크에 들어가는 공개 식별자(조회 키). UNIQUE
+--   · token_hash — 토큰 원문의 SHA-256. 검증은 이 값으로만 한다
+--   · hmac_signature — `uuid.expiresAt`에 대한 HMAC-SHA256. 서버가 서명한 것임을 증명
+--   · 원문 토큰은 저장하지 않는다(발급 응답 1회 노출). DB 덤프로 링크를 위조할 수 없다
+--
+-- claim_count / is_claimed를 둘 다 두는 이유: 동시 클릭 2건에서 "둘 다 성공"하는 것을
+-- 막아야 한다. 갱신은 `UPDATE ... WHERE claim_count = 0`(compare-and-set)으로 한다.
+-- -----------------------------------------------------------------------------
+CREATE TABLE instant_claim_tokens (
+  id               BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '토큰 PK',
+  campaign_id      BIGINT UNSIGNED NOT NULL                COMMENT '대상 캠페인',
+  dispatch_queue_id BIGINT UNSIGNED NULL                   COMMENT '발송 큐 행(어떤 메시지로 나갔는지)',
+  token_uuid       CHAR(36)        NOT NULL                COMMENT '링크에 노출되는 공개 UUID. UNIQUE',
+  token_hash       CHAR(64)        NOT NULL                COMMENT '토큰 원문 SHA-256. 검증 키. UNIQUE',
+  hmac_signature   VARCHAR(64)     NOT NULL                COMMENT 'uuid.expires_at에 대한 HMAC-SHA256(hex)',
+  reward_amount    INT UNSIGNED    NOT NULL DEFAULT 0      COMMENT '확정 리워드 금액(원)',
+  is_claimed       TINYINT(1)      NOT NULL DEFAULT 0      COMMENT '1=사용됨(1회용)',
+  claim_count      TINYINT UNSIGNED NOT NULL DEFAULT 0     COMMENT '사용 시도 성공 횟수. 0→1만 허용',
+  claimed_at       DATETIME(3)     NULL                    COMMENT '사용 시각',
+  claimed_ip       VARBINARY(16)   NULL                    COMMENT '사용 IP(INET6_ATON). 분쟁·어뷰징 추적',
+  expires_at       DATETIME(3)     NOT NULL                COMMENT '만료 시각(발급 + TTL, 기본 15분)',
+  created_at       DATETIME(3)     NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  PRIMARY KEY (id),
+  UNIQUE KEY uq_claim_token_uuid (token_uuid) COMMENT '링크 조회 키',
+  UNIQUE KEY uq_claim_token_hash (token_hash) COMMENT '원문 위조 방지 — 해시로만 검증',
+  KEY idx_claim_expiry (expires_at, is_claimed) COMMENT '만료 스윕',
+  CONSTRAINT fk_claim_campaign FOREIGN KEY (campaign_id) REFERENCES interactive_campaigns (id)
+    ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT fk_claim_dispatch FOREIGN KEY (dispatch_queue_id) REFERENCES dispatch_queue (id)
+    ON DELETE SET NULL ON UPDATE CASCADE,
+  CONSTRAINT chk_claim_count CHECK (claim_count <= 1),
+  CONSTRAINT chk_claim_consistency CHECK (is_claimed = 0 OR claimed_at IS NOT NULL)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
+  COMMENT='1회용 딥링크 클레임 토큰(HMAC 서명·15분 TTL·compare-and-set 사용)';
+
+-- -----------------------------------------------------------------------------
+-- 12. shortform_conversion_attributions — 풀 퍼널 전환 로그(ROAS)
+-- -----------------------------------------------------------------------------
+-- 숏폼 마케팅의 질문은 "몇 명이 쿠폰을 받았나"가 아니라 **"그 쿠폰이 얼마를 벌었나"** 다.
+-- 그래서 퍼널을 단계별 행으로 남긴다: VIDEO_VIEW → COMMENT → LINK_CLICK → CLAIM → PURCHASE.
+--
+-- 한 토큰이 단계마다 한 행을 갖고(UNIQUE (claim_token_id, stage)), 같은 단계가 두 번
+-- 기록되면 무시된다(웹훅/리다이렉트 재전송). 구매 단계에는 주문 금액과 할인액을 남겨
+--   ROAS = 구매 매출 / 리워드 원가
+-- 를 캠페인 단위로 계산할 수 있게 한다.
+-- -----------------------------------------------------------------------------
+CREATE TABLE shortform_conversion_attributions (
+  id                BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '전환 로그 PK',
+  campaign_id       BIGINT UNSIGNED NOT NULL                COMMENT '대상 캠페인',
+  content_ref       VARCHAR(80)     NOT NULL                COMMENT '콘텐츠 ID(릴스/쇼츠)',
+  interaction_event_id BIGINT UNSIGNED NULL                 COMMENT '원천 댓글 이벤트',
+  claim_token_id    BIGINT UNSIGNED NULL                    COMMENT '연결된 1회용 토큰',
+  stage             ENUM('VIDEO_VIEW','COMMENT','LINK_CLICK','CLAIM','PURCHASE') NOT NULL
+                    COMMENT '퍼널 단계',
+  order_id          VARCHAR(64)     NULL                    COMMENT '쇼핑몰 주문번호(구매 단계)',
+  order_amount      INT UNSIGNED    NOT NULL DEFAULT 0      COMMENT '주문 금액(원). 구매 단계만',
+  discount_amount   INT UNSIGNED    NOT NULL DEFAULT 0      COMMENT '쿠폰 할인액(원). 구매 단계만',
+  utm_source        VARCHAR(40)     NULL                    COMMENT '유입 소스(instagram, youtube)',
+  occurred_at       DATETIME(3)     NOT NULL DEFAULT CURRENT_TIMESTAMP(3) COMMENT '단계 발생 시각',
+  PRIMARY KEY (id),
+  UNIQUE KEY uq_attribution_stage (claim_token_id, stage) COMMENT '같은 토큰·같은 단계는 한 번만(재전송 멱등)',
+  KEY idx_attribution_campaign_stage (campaign_id, stage, occurred_at) COMMENT '퍼널 집계·ROAS',
+  KEY idx_attribution_content (content_ref, stage) COMMENT '콘텐츠별 성과 비교',
+  CONSTRAINT fk_attribution_campaign FOREIGN KEY (campaign_id) REFERENCES interactive_campaigns (id)
+    ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT fk_attribution_event FOREIGN KEY (interaction_event_id) REFERENCES webhook_interaction_events (id)
+    ON DELETE SET NULL ON UPDATE CASCADE,
+  CONSTRAINT fk_attribution_token FOREIGN KEY (claim_token_id) REFERENCES instant_claim_tokens (id)
+    ON DELETE SET NULL ON UPDATE CASCADE,
+  CONSTRAINT chk_attribution_purchase CHECK (stage <> 'PURCHASE' OR order_amount > 0)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
+  COMMENT='숏폼 → 댓글 → 링크 → 수령 → 구매 전환 퍼널(ROAS 근거)';
+

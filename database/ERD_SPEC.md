@@ -312,3 +312,195 @@ WHERE status = 'active' AND token_expires_at < DATE_ADD(NOW(), INTERVAL 24 HOUR)
 | 워커 50+ | SKIP LOCKED | 동일. 단 `ORDER BY`가 인덱스만 타는지 `EXPLAIN`으로 상시 확인 |
 | 발행 이력 장기 보관 | publish_logs 단일 | 테넌트별 아카이브 + 웹훅 원문은 오브젝트 스토리지로 |
 | 통계 조회 | JSON 결과 | 실험 판정 원자료(웹훅 샘플)를 별 테이블로 정규화 + 야간 집계 테이블 |
+
+---
+
+# 2부. 숏폼 인터랙티브 응모 & 즉시 쿠폰 디스패치
+
+> 1부가 "영상을 만들어 예약 발행하는 일"이라면, 2부는 **발행한 영상이 만든 트래픽을
+> 돈으로 바꾸는 일**입니다. 릴스 댓글에 '할인'이라고 남긴 사람에게 **5초 안에** 1회용
+> 쿠폰 딥링크를 보내고, 그 링크가 결제로 이어졌는지(ROAS)까지 셉니다.
+
+## 9. 요구 → 설계
+
+| 운영에서 실제로 터지는 일 | 설계 답 | 테이블 |
+| --- | --- | --- |
+| Meta가 같은 댓글 웹훅을 3번 보낸다 | `external_event_id` UNIQUE + 처리 상태 기록 | `webhook_interaction_events` |
+| 응답이 늦으면 Meta가 재전송하고, 그 사이 발송이 2번 나간다 | `idempotency_key` UNIQUE(이벤트×채널×수신자) | `dispatch_queue` |
+| 사용자는 댓글 쓰고 30초를 기다린다 | `dispatch_deadline_at`(5초) + 워커 즉시 선점 | `dispatch_queue` |
+| 실패가 반복되며 무한 재시도 | 지수 백오프(`available_at`) + `DEAD_LETTER` 분리 | `dispatch_queue` |
+| 딥링크가 단톡방에 뿌려져 여러 명이 쓴다 | 1회용 토큰 + compare-and-set(`claim_count = 0`) | `instant_claim_tokens` |
+| DB 덤프로 링크를 위조한다 | 원문 토큰 미저장, `token_hash` + HMAC 서명만 | `instant_claim_tokens` |
+| 매크로가 댓글 3,000개를 쓴다 | 작성자 HMAC·IP·시간창 기반 어뷰징 점수 | `webhook_interaction_events` |
+| "쿠폰 몇 장 나갔나"만 알고 매출 기여는 모른다 | 단계별 전환 로그 → ROAS | `shortform_conversion_attributions` |
+
+## 10. ERD (2부)
+
+```mermaid
+erDiagram
+    tenants ||--o{ interactive_campaigns : "스코프"
+    shortform_projects ||--o{ interactive_campaigns : "연결 콘텐츠"
+    interactive_campaigns ||--o{ webhook_interaction_events : "1 : N"
+    interactive_campaigns ||--o{ dispatch_queue : "1 : N"
+    webhook_interaction_events ||--o| dispatch_queue : "이벤트 1 : 0..1 발송"
+    dispatch_queue ||--o| instant_claim_tokens : "발송 1 : 0..1 토큰"
+    interactive_campaigns ||--o{ instant_claim_tokens : "1 : N"
+    instant_claim_tokens ||--o{ shortform_conversion_attributions : "토큰 1 : N 단계"
+    webhook_interaction_events ||--o{ shortform_conversion_attributions : "원천"
+
+    interactive_campaigns {
+        bigint  id PK
+        bigint  tenant_id FK
+        bigint  project_id FK
+        varchar code UK
+        enum    platform "instagram|youtube"
+        varchar content_ref
+        json    trigger_keywords
+        int     reward_amount
+        int     total_reward_budget
+        int     claim_limit
+        tinyint max_claims_per_user
+        smallint token_ttl_minutes
+        enum    status
+    }
+    webhook_interaction_events {
+        bigint  id PK
+        bigint  campaign_id FK
+        varchar external_event_id UK
+        char    author_platform_id "HMAC"
+        varchar message_text
+        varchar matched_keyword
+        tinyint signature_verified
+        enum    processing_status
+        json    raw_payload
+    }
+    dispatch_queue {
+        bigint  id PK
+        bigint  interaction_event_id FK
+        enum    channel "ALIMTALK|INSTAGRAM_DM"
+        varchar idempotency_key UK
+        enum    status "PENDING|DISPATCHED|FAILED|RETRY|DEAD_LETTER"
+        tinyint attempts
+        datetime available_at
+        datetime dispatch_deadline_at
+    }
+    instant_claim_tokens {
+        bigint  id PK
+        char    token_uuid UK
+        char    token_hash UK
+        varchar hmac_signature
+        tinyint is_claimed
+        tinyint claim_count "0→1만"
+        datetime expires_at
+    }
+    shortform_conversion_attributions {
+        bigint  id PK
+        bigint  claim_token_id FK
+        enum    stage "VIDEO_VIEW|COMMENT|LINK_CLICK|CLAIM|PURCHASE"
+        varchar order_id
+        int     order_amount
+        int     discount_amount
+    }
+```
+
+## 11. 처리 파이프라인과 시간 예산(5초)
+
+```
+Meta 웹훅 (X-Hub-Signature-256)
+   │ ① 서명 검증 (HMAC-SHA256, raw body 기준)           ~1ms
+   ▼
+② 파싱: object=instagram → entry[].changes[].value.id  ~2ms
+   │     (댓글 ID, 작성자 ID, 본문)
+   ▼
+③ 캠페인 매칭: platform + content_ref → 캠페인          ~1ms (인덱스)
+   │     키워드 매칭(trie/정규화) → matched_keyword
+   ▼
+④ 멱등 INSERT: external_event_id UNIQUE                ~2ms
+   │     중복이면 DUPLICATE로 기록하고 200 응답(재전송 종료)
+   ▼
+⑤ 어뷰징 점수(작성자·IP·10초 창)                        ~2ms
+   │     임계 이상이면 REJECTED_ABUSE, 발송하지 않음
+   ▼
+⑥ dispatch_queue INSERT (PENDING, deadline = now+5s)    ~2ms
+   │  ── 여기까지가 **웹훅 응답 경로**: 총 10ms 이내 ──
+   ▼
+⑦ 워커가 즉시 선점 → 토큰 생성(HMAC) → DM/알림톡 발송    ~300~800ms
+   │     DISPATCHED, dispatched_at 기록
+   ▼
+⑧ 실패 시 RETRY(1s, 2s, 4s) → 데드라인 초과 시 DEAD_LETTER
+```
+
+**왜 웹훅 경로에서 발송하지 않는가**: Meta는 5초 안에 200을 받지 못하면 같은 이벤트를
+재전송합니다. 발송 API(수백 ms)를 웹훅 경로에서 기다리면 재전송 폭풍이 만들어지고,
+그 재전송이 다시 발송을 유발합니다. 그래서 **접수(웹훅)와 발송(워커)을 분리**하고,
+사용자 체감 SLA 5초는 `dispatch_deadline_at`으로 관리합니다.
+
+## 12. 멱등성 3중 방어
+
+| 계층 | 장치 | 막는 것 |
+| --- | --- | --- |
+| 1 | `webhook_interaction_events.external_event_id` UNIQUE | 같은 댓글 웹훅 재전송 |
+| 2 | `dispatch_queue.idempotency_key` UNIQUE (`event:channel:recipient`) | 워커 재시작·중복 선점 |
+| 3 | `instant_claim_tokens.claim_count` compare-and-set | 링크 더블클릭·동시 사용 |
+
+1번만 있으면 워커가 죽었다 살아날 때 다시 발송할 수 있고, 2번만 있으면 재전송 웹훅이
+이벤트 행을 두 개 만듭니다. 3번은 발송이 아니라 **사용**을 막는 계층입니다. 세 계층이
+각각 다른 실패 모드를 담당하기 때문에 하나로 합칠 수 없습니다.
+
+## 13. 어뷰징 점수(숏폼 댓글)
+
+| 신호 | 가중치 | 근거 |
+| --- | --- | --- |
+| 같은 작성자 ID가 10초에 3건 이상 | +40 | 도배 |
+| 같은 IP 서브넷에서 10초에 20건 이상 | +30 | 매크로 팜 |
+| 신규 계정(가입 1일 이내) | +20 | 대량 생성 계정 |
+| 본문이 3자 이하 또는 반복 문자열 | +15 | '할인'만 3,000번 |
+| 정상 | 0 | — |
+
+50점 이상이면 `REJECTED_ABUSE`로 발송하지 않습니다. 점수와 사유는
+`webhook_interaction_events.processing_status`/`rejection_reason`에 남아,
+"차단률 12%" 같은 지표의 근거가 됩니다.
+
+## 14. 운영 쿼리
+
+```sql
+-- ① 5초 SLA 준수율(최근 1시간)
+SELECT
+  SUM(dispatched_at <= dispatch_deadline_at) / COUNT(*) AS on_time_rate,
+  MAX(TIMESTAMPDIFF(MICROSECOND, created_at, dispatched_at) / 1000) AS worst_ms
+FROM dispatch_queue
+WHERE campaign_id = ? AND created_at >= NOW() - INTERVAL 1 HOUR;
+
+-- ② 워커가 집어갈 다음 10건(인덱스: status, available_at)
+SELECT id FROM dispatch_queue
+WHERE status IN ('PENDING','RETRY') AND available_at <= NOW(3)
+ORDER BY available_at
+LIMIT 10;
+
+-- ③ 퍼널 전환율·ROAS
+SELECT
+  SUM(stage = 'COMMENT')  AS comments,
+  SUM(stage = 'LINK_CLICK') AS clicks,
+  SUM(stage = 'CLAIM')    AS claims,
+  SUM(stage = 'PURCHASE') AS purchases,
+  SUM(order_amount)       AS revenue,
+  SUM(discount_amount)    AS reward_cost,
+  SUM(order_amount) / NULLIF(SUM(discount_amount), 0) AS roas
+FROM shortform_conversion_attributions
+WHERE campaign_id = ?;
+
+-- ④ 만료 토큰 스윕
+SELECT id FROM instant_claim_tokens
+WHERE is_claimed = 0 AND expires_at < NOW(3)
+LIMIT 500;
+```
+
+## 15. 한계와 다음 단계
+
+| 상황 | 지금 | 다음 단계 |
+| --- | --- | --- |
+| 댓글 하루 100만 건 | 단일 테이블 | `received_at` 일 단위 RANGE 파티셔닝 + 7일 후 아카이브 |
+| 워커 수평 확장 | MySQL 큐 | Redis Streams/ SQS로 이관, `SKIP LOCKED`는 유지(폴백) |
+| 실발송 연동 | SENS/DM 어댑터 인터페이스 | 자격 증명 주입 + 발송 결과 웹훅 수신(도달률) |
+| 토큰 대량 발급 | 앱 난수 + SHA-256 | HMAC 키 회전(KMS) + 서명 버전 필드 |
+| 전환 정합성 | 쇼핑몰 주문 웹훅 | 주문 취소·반품 시 ROAS 재계산(음수 전환) |

@@ -193,4 +193,35 @@ export type {
   DemoStudio,
 } from './services/studio';
 
+/* Interactive shortform flash drop: comment → 5s coupon dispatch → funnel */
+export {
+  InteractiveCouponDispatcher,
+  SignatureRejectedError,
+  hmacSha256Hex,
+  hmacSha256HexBytes,
+  matchKeyword,
+  normaliseText,
+  parseWebhook,
+  sha256Bytes,
+  sha256Hex,
+  uuidV4,
+} from './core/interactiveCouponDispatcher';
+export type {
+  ClaimOutcome,
+  ClaimToken,
+  CommentEvent,
+  DispatchCycleReport,
+  DispatchJob,
+  DispatchStatus,
+  DispatcherOptions,
+  FunnelReport,
+  FunnelStage,
+  IngestReport,
+  InteractiveCampaign,
+  Platform,
+  StormReport,
+} from './core/interactiveCouponDispatcher';
+export { InteractivePromotionConsole } from './ui/InteractivePromotionConsole';
+export type { InteractivePromotionConsoleProps } from './ui/InteractivePromotionConsole';
+
 export * from './types';
