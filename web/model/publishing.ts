@@ -192,8 +192,13 @@ export class PublishDesk {
     const decision = this.tenants.consume(slot.tenantId, provider);
     if (!decision.allowed) {
       const resetInMin = Math.round(decision.quotaResetInMs / 60_000);
+      const resetHours = Math.floor(resetInMin / 60);
       const resetLabel =
-        resetInMin >= 60 ? `${Math.floor(resetInMin / 60)}시간 ${resetInMin % 60}분` : `${resetInMin}분`;
+        resetHours === 0
+          ? `${resetInMin}분`
+          : resetInMin % 60 === 0
+            ? `${resetHours}시간`
+            : `${resetHours}시간 ${resetInMin % 60}분`;
       const reason =
         decision.reason === 'quota-exhausted'
           ? `${PROVIDER_PROFILES[provider].label} 일일 한도 소진 (${decision.quotaRemaining}/${decision.quotaLimit}) — ${resetLabel} 뒤 초기화`

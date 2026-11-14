@@ -127,7 +127,7 @@ export function PublishingPanel() {
                           tone={ratio >= 1 ? 'bad' : ratio > 0.8 ? 'warn' : 'ok'}
                         />
                         <div className="small muted" style={{ paddingLeft: 88 }}>
-                          남은 발행 {provider.publishesLeft}건 · 요청 버킷 {Math.round(provider.requestRemaining)}/
+                          남은 발행 {provider.publishesLeft}건 · 요청 버킷 잔여 {Math.round(provider.requestRemaining)}/
                           {Math.round(provider.requestCapacity)} · {Math.round(provider.resetInMs / 3_600_000)}시간 뒤 초기화
                         </div>
                       </div>
@@ -183,6 +183,8 @@ export function PublishingPanel() {
                       <Pill tone="ok">발행</Pill>
                     ) : slot.state === 'blocked' ? (
                       <Pill tone="warn">중단</Pill>
+                    ) : slot.atMs < Date.now() ? (
+                      <Pill tone="warn">지연</Pill>
                     ) : (
                       <Pill tone="ghost">예약</Pill>
                     )}

@@ -84,8 +84,10 @@ export function HookPanel({ topic, onAdopt }: HookPanelProps) {
         >
           <div className="stack" style={{ gap: 10 }}>
             {test.arms.map((arm) => {
-              const row = result.rows.find((item) => item.key === 'retention');
-              const armRow = arm.id === 'A' ? row?.a : row?.b;
+              const view = result.rows.find((item) => item.key === 'viewRate3s');
+              const retention = result.rows.find((item) => item.key === 'retention');
+              const viewCell = arm.id === 'A' ? view?.a : view?.b;
+              const retentionCell = arm.id === 'A' ? retention?.a : retention?.b;
               return (
                 <div
                   key={arm.id}
@@ -107,13 +109,18 @@ export function HookPanel({ topic, onAdopt }: HookPanelProps) {
                   <p style={{ margin: '0 0 8px', fontSize: 13.5, lineHeight: 1.5 }}>{arm.text}</p>
                   <div className="row" style={{ gap: 14 }}>
                     <span className="small muted">
-                      3초 유지 <strong className="mono">{pct(((armRow?.rate ?? 0) * 100), 1)}</strong>
+                      3초 유지{' '}
+                      <strong className="mono">{viewCell && viewCell.trials > 0 ? pct(viewCell.rate * 100, 1) : '—'}</strong>
                     </span>
                     <span className="small muted">
-                      완시 {arm.completions ? num(arm.completions) : 0}건
+                      완시{' '}
+                      <strong className="mono">
+                        {retentionCell && retentionCell.trials > 0 ? pct(retentionCell.rate * 100, 1) : '—'}
+                      </strong>
+                      {arm.completions > 0 ? ` (${num(arm.completions)}건)` : ''}
                     </span>
                     <span className="small muted">
-                      쿠폰 {num(arm.couponClaims)}건
+                      쿠폰 <strong className="mono">{num(arm.couponClaims)}</strong>건
                     </span>
                   </div>
                 </div>
@@ -173,7 +180,7 @@ export function HookPanel({ topic, onAdopt }: HookPanelProps) {
                   : `훅마다 최소 200 노출이 필요합니다 (현재 A ${num(a.impressions)} · B ${num(b.impressions)}).`}
               </p>
               <p className="note" style={{ marginTop: 8 }}>
-                표본이 부족하거나, 차이가 유의하지 않거나, 상승폭이 5%p에 못 미치면 “결론 유보”가 정답입니다. 대시보드가
+                표본이 부족하거나, 차이가 유의하지 않거나, 상승폭이 5%(상대)에 못 미치면 “결론 유보”가 정답입니다. 대시보드가
                 매번 승자를 만들면 그건 통계가 아닙니다.
               </p>
             </div>
