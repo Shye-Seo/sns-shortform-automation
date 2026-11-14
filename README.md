@@ -898,6 +898,17 @@ npx tsx -e "...simulateCommentStorm({ comments: 1000, concurrency: 256, clickRat
 | **발행 캘린더 · 쿼터** | 지터가 들어간 예약 타임라인, Meta 25건/24h·YouTube 10,000 unit(업로드 1,600) 게이지, 한도 소진 시 발행 중단, DLQ 원클릭 재시도와 운영자 기록 | `rateLimit/jitter.planPublishSlots`, `rateLimit/tenantRegistry`, `queue/jobQueue`, `studio/dlqActions` |
 | **훅 A/B** | 같은 영상의 A/B 훅을 노출·3초 유지·완시·댓글·쿠폰 전환으로 비교, 표본 부족 시 판정 보류, 승자 채택 시 스튜디오 대본에 반영 | `telemetry/hooks.generateHookVariants`, `telemetry/significance`(`evaluateExperiment`·`twoProportionZTest`·`wilsonInterval`·`requiredSampleSize`) |
 
+<table>
+  <tr>
+    <td><img src="docs/preview/web-console-studio.png" alt="9:16 스튜디오 프리뷰" /></td>
+    <td><img src="docs/preview/web-console-coupon.png" alt="댓글 → DM 쿠폰" /></td>
+  </tr>
+  <tr>
+    <td><img src="docs/preview/web-console-calendar.png" alt="발행 캘린더와 API 쿼터" /></td>
+    <td><img src="docs/preview/web-console-hooks.png" alt="훅 A/B 판정" /></td>
+  </tr>
+</table>
+
 ### 18.1 같은 코드를 두 런타임에서 돌리는 방식
 
 - `docs/app/app.js`는 `web/main.tsx`를 esbuild로 번들한 단일 파일입니다(런타임 의존성 없음).
