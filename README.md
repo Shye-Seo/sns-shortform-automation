@@ -1,6 +1,7 @@
 <p align="center">
   <a href="https://github.com/Shye-Seo/sns-shortform-automation/actions/workflows/ci.yml"><img alt="CI Pipeline" src="https://github.com/Shye-Seo/sns-shortform-automation/actions/workflows/ci.yml/badge.svg" /></a>
-  <img alt="Tests" src="https://img.shields.io/badge/tests-538_(Vitest_413_%C2%B7_PHPUnit_125)-2E7D32?style=flat-square" />
+  <img alt="Tests" src="https://img.shields.io/badge/tests-564_(Vitest_439_%C2%B7_PHPUnit_125)-2E7D32?style=flat-square" />
+  <a href="https://shye-seo.github.io/sns-shortform-automation/"><img alt="Live demo" src="https://img.shields.io/badge/live_demo-browser_console-13315C?style=flat-square" /></a>
 </p>
 
 # shortform-engine
@@ -11,7 +12,7 @@
 그것을 **수십 개 테넌트 · 수백 편 · 플랫폼 쿼터 안에서** 안정적으로 운영하는 것은
 완전히 다른 문제입니다. 이 저장소는 대규모 배포 환경의 안정성과 확장성 문제를 풉니다.
 
-`TypeScript` · `Node.js 20` · `ffmpeg` · `Vitest 413 tests` · `커버리지 86.0%`
+`TypeScript` · `Node.js 20` · `ffmpeg` · `Vitest 439 tests` · `커버리지 86.0%`
 `PHP 8.2` · `MySQL 8.0` · `Meta Graph API` · `NCP SENS 알림톡` · `PHPUnit 125 tests`
 
 | 계층 | 무엇을 보장하나 |
@@ -26,9 +27,13 @@
 | **서버 계층(DB·API)** | MySQL 8.0 기반 작업 원장 보존 및 PHP 백엔드 워커의 `SKIP LOCKED` 기반 동시성 경합 없는 작업 선점 |
 
 ```bash
-npm ci && npm run verify      # 413 tests, 네트워크·ffmpeg 없이
-npm run cli -- studio         # 데모 콘솔 (아래 출력 참고)
+npm ci && npm run verify      # 439 tests, 네트워크·ffmpeg 없이
+npm run cli -- studio         # 터미널 데모 콘솔
+npm run dev:web               # 브라우저 콘솔 → http://127.0.0.1:4173
 ```
+
+**웹 데모**: <https://shye-seo.github.io/sns-shortform-automation/> — 9:16 스튜디오 프리뷰,
+인스타 댓글 → DM 쿠폰, 예약 발행·쿼터·DLQ, 훅 A/B를 설치 없이 클릭으로 확인합니다(18장).
 
 ---
 
@@ -582,7 +587,7 @@ npm run cli -- studio --html .work/studio.html
 ## 12. 검증
 
 ```bash
-npm run verify    # typecheck + lint + 413 tests
+npm run verify    # typecheck + lint + 439 tests (+ typecheck:web)
 npm run coverage  # 86.0% statements · 80.4% branches
 ```
 
@@ -599,6 +604,9 @@ npm run coverage  # 86.0% statements · 80.4% branches
 | **Redis 큐 (WATCH 원자성·6노드 경합·지연 승격·lease 회수·드라이버 선택)** | `redisAdapter.test.ts` | **24** |
 | **시계열 메트릭 (차분·링버퍼·토큰 합계·차트 기하·SVG 이스케이프·데모 이력)** | `metricsTimeSeries.test.ts` · `metricsChart.test.tsx` | **21 + 3** |
 | 기존 파이프라인 (대본·자막·더킹·렌더·게시) | 8개 파일 | 147 |
+| 해시 원시함수 (SHA-1·SHA-256·HMAC 벡터 + `node:crypto` 대조) | `hash.test.ts` | 9 |
+| 웹 콘솔 모델 (타임라인·더킹·댓글 DM·쿼터·A/B) | `webModels.test.ts` | 13 |
+| 웹 콘솔 클릭 (jsdom: 패널 전환·댓글→DM→수령·쿼터 중단) | `webConsole.test.tsx` | 4 |
 
 네트워크·ffmpeg 없이 전부 통과합니다. 외부 API는 fake HTTP와 주입된 리프레셔로,
 재시도는 주입된 시계·sleep으로 검증합니다.
@@ -640,6 +648,7 @@ npm run coverage  # 86.0% statements · 80.4% branches
 | A/B 통계 | ✅ 구현·테스트. 실제 플랫폼 웹훅 연동은 스키마 수신 단계 |
 | 콘솔/API | ✅ text·HTML·Prometheus·JSON 서빙 및 DLQ 액션 API 연동 |
 | 60초 렌더 파이프라인 | ✅ ffmpeg 6.0 실제 인코딩·프리플라이트 통과 |
+| 웹 데모 콘솔 (GitHub Pages) | ✅ 정적 번들이 엔진 모듈을 그대로 실행. Meta·YouTube·Redis·SENS 실호출은 없음 |
 
 **로드맵**:
 - [x] MySQL 8.0 `SKIP LOCKED` 기반 분산 비동기 렌더 큐 백엔드 (PHP 8.2)
@@ -647,6 +656,7 @@ npm run coverage  # 86.0% statements · 80.4% branches
 - [x] Dead Letter Queue (DLQ) 원클릭 재시도 및 폐기 콘솔 UI
 - [x] Redis 큐 어댑터 (WATCH/MULTI/EXEC 원자적 선점 · 지연 승격 · lease 회수 · `QUEUE_DRIVER` 스위칭)
 - [x] 실시간 렌더링 큐 시계열 메트릭 차트 (처리량·실패율·플랫폼 토큰 추이, SVG/React 두 표현)
+- [x] 브라우저 데모 콘솔 — 9:16 스튜디오·댓글 DM·발행 쿼터·훅 A/B (GitHub Pages 정적 배포)
 
 
 ---
@@ -871,6 +881,62 @@ npx tsx -e "...simulateCommentStorm({ comments: 1000, concurrency: 256, clickRat
   PHP는 `hash_hmac`). 다만 키 관리(KMS·회전 주기)는 문서화만 되어 있고 실제 KMS 연동은 없습니다.
 - 위 17.6의 초당 처리량은 **인프로세스 시뮬레이션**입니다. 실제 Meta 웹훅 처리량은 네트워크·DB가
   결정하며, 이 수치를 운영 TPS로 주장하지 않습니다.
+
+---
+
+## 18. 웹 데모 콘솔 — 9:16 스튜디오 · 댓글 DM · 발행 쿼터 · 훅 A/B
+
+**라이브**: <https://shye-seo.github.io/sns-shortform-automation/>
+
+빌드된 정적 산출물이 `docs/`에 있습니다. 설치 없이 열리고, 클릭으로 동작합니다. 화면의 숫자는
+미리 만들어 둔 값이 아니라 브라우저에서 같은 엔진 모듈을 실행한 결과입니다.
+
+| 탭 | 확인하는 것 | 실행되는 코드 |
+|----|------------|---------------|
+| **9:16 스튜디오** | 4비트 대본 편집 → 타임라인 재계산, 안전영역 가이드 토글, 재생 위치에 맞춘 단어별 자막 강조, 발화 시 BGM 15% 감쇠 곡선 | `scriptEngine`(`planTimeBudget`·`fitDrafts`·`buildTimeline`), `tts.estimateAlignmentFor`, `audioEngine`(`computeDuckingEnvelope`·`buildCues`), `videoCompositor`(`planOverlayLayout`·`checkLayoutCollisions`) |
+| **댓글 → DM 쿠폰** | 테스트 댓글 입력 → HMAC 서명 검증 → 큐 적재 → 어뷰징 차단 → 5초 안에 1회용 링크 발급 → 수령(1회) → 퍼널·ROAS | `core/interactiveCouponDispatcher` 전체 (워커 일시정지로 SLA 초과도 재현) |
+| **발행 캘린더 · 쿼터** | 지터가 들어간 예약 타임라인, Meta 25건/24h·YouTube 10,000 unit(업로드 1,600) 게이지, 한도 소진 시 발행 중단, DLQ 원클릭 재시도와 운영자 기록 | `rateLimit/jitter.planPublishSlots`, `rateLimit/tenantRegistry`, `queue/jobQueue`, `studio/dlqActions` |
+| **훅 A/B** | 같은 영상의 A/B 훅을 노출·3초 유지·완시·댓글·쿠폰 전환으로 비교, 표본 부족 시 판정 보류, 승자 채택 시 스튜디오 대본에 반영 | `telemetry/hooks.generateHookVariants`, `telemetry/significance`(`evaluateExperiment`·`twoProportionZTest`·`wilsonInterval`·`requiredSampleSize`) |
+
+### 18.1 같은 코드를 두 런타임에서 돌리는 방식
+
+- `docs/app/app.js`는 `web/main.tsx`를 esbuild로 번들한 단일 파일입니다(런타임 의존성 없음).
+  React는 이미 devDependency였고, 번들러는 esbuild 하나만 추가했습니다.
+- 엔진 모듈은 수정 없이 가져옵니다. 화면과 테스트가 같은 함수를 보므로 프리뷰의 단어 위치와
+  렌더 결과가 어긋날 수 없습니다. 자막 줄바꿈도 렌더러와 같은 캡션 박스 폭(`layout.caption.w`)으로
+  계산합니다.
+- Node 내장 모듈 4개(`node:fs/promises`·`node:path`·`node:child_process`·`node:crypto`)만
+  `web/shims/`로 매핑했습니다. 데모가 부르지 않는 경로(파일 쓰기, ffmpeg 실행)는 호출되면
+  명시적으로 실패합니다 — 조용히 성공한 척하지 않습니다.
+- 해시는 `src/lib/hash.ts` 한 곳에 모았습니다. SHA-256·SHA-1·HMAC-SHA256을 의존성 없이 구현하고
+  `tests/hash.test.ts`가 FIPS 180-4 벡터와 `node:crypto` 결과를 함께 대조합니다. 이 작업에서
+  55바이트 경계의 패딩 오프바이원(길이가 55 mod 64일 때만 다이제스트가 달라지던 버그)을 찾아
+  고쳤습니다. 토큰·서명이 걸린 코드라 테스트 없이 옮기지 않았습니다.
+
+### 18.2 로컬 실행
+
+```bash
+npm install
+npm run build:web     # docs/ 갱신 (docs/index.html + docs/app/app.js)
+npm run dev:web       # http://127.0.0.1:4173 (의존성 없는 정적 서버)
+npm run typecheck:web # 타입 검사 (src + web, DOM lib 포함)
+```
+
+### 18.3 테스트
+
+| 파일 | 건수 | 내용 |
+|------|------|------|
+| `tests/hash.test.ts` | 9 | SHA-1/SHA-256/HMAC 벡터, `node:crypto` 대조, 55바이트 경계, `createHash` 표면 |
+| `tests/webModels.test.ts` | 13 | 타임라인 합계·3.5초 훅·자막 폭·더킹 15/55%·편집 문장 보존·댓글 1건→DM 1건·도배 차단·5초 초과 DLQ·1,000건 오버이슈 0·쿼터 소진·DLQ 재시도·A/B 판정 |
+| `tests/webConsole.test.tsx` | 4 | jsdom에서 실제 클릭: 스튜디오 렌더, 댓글→DM→수령, 쿼터 중단, A/B 표본 수집 |
+
+### 18.4 정직한 경계
+
+- Meta Graph API·YouTube Data API·Redis·SENS는 자격 증명이 없어 호출하지 않습니다. 데모의
+  한도·거부·DLQ는 엔진이 내린 판정이고, 플랫폼의 응답이 아닙니다.
+- 훅 A/B의 노출·시청 수는 시뮬레이션입니다. 검정·신뢰구간·승자 판정은 실제 통계 모듈이 계산합니다.
+- 브라우저는 렌더하지 않습니다. 프리뷰는 타임라인·자막·더킹 값을 그리는 화면이고, 인코딩은
+  워커의 ffmpeg가 `docs/demo.mp4`처럼 수행합니다.
 
 ---
 

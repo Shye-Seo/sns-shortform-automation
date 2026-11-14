@@ -6,7 +6,13 @@
     "types": [
       "node",
       "vitest/globals"
-    ]
+    ],
+    "lib": [
+      "ES2022",
+      "DOM",
+      "DOM.Iterable"
+    ],
+    "jsx": "react-jsx"
   },
   "include": [
     "src/**/*.ts",
