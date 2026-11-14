@@ -439,7 +439,9 @@ export function StudioPanel(props: StudioPanelProps) {
 
 /** Per-beat speech budget from the engine's time-budget planner. */
 function budgetShare(beat: 'hook' | 'problem' | 'solution' | 'cta', model: StudioModel): number {
-  return model.budget.perBeatSec[beat];
+  const caps = model.budget.sceneCapsSec;
+  if (beat === 'solution') return caps.solutionEach;
+  return caps[beat];
 }
 
 function Caption({ cue, model, t }: { cue: Cue | null; model: StudioModel; t: number }) {

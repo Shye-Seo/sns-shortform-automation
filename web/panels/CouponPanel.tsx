@@ -298,7 +298,9 @@ export function CouponPanel() {
                     <tr key={dm.jobId}>
                       <td className="mono">{dm.handle}</td>
                       <td className="mono">{hhmmss(dm.at)}</td>
-                      <td className="mono">{leftSec > 0 ? `${Math.floor(leftSec / 60)}:${String(leftSec % 60).padStart(2, '0')}` : '만료'}</td>
+                      <td className="mono">
+                        {leftSec > 0 ? `${Math.floor(leftSec / 60)}분 ${String(leftSec % 60).padStart(2, '0')}초` : '만료'}
+                      </td>
                       <td>
                         {dm.purchased ? (
                           <Pill tone="ok">구매</Pill>

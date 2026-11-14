@@ -145,7 +145,7 @@ describe('web coupon desk', () => {
 });
 
 describe('web publishing desk', () => {
-  it('starts at today\'s usage and stops publishing when a platform quota is exhausted', () => {
+  it('starts at today\'s usage and stops publishing when a platform quota is exhausted', async () => {
     const desk = new PublishDesk(() => Date.now());
     const meta = desk.quotas()[0]?.providers.find((provider) => provider.provider === 'meta');
     expect(meta?.limit).toBe(25);
@@ -154,7 +154,7 @@ describe('web publishing desk', () => {
     let published = 0;
     let blocked = 0;
     for (let index = 0; index < 20; index += 1) {
-      const slot = desk.publishNext();
+      const slot = await desk.publishNext();
       if (!slot) break;
       if (slot.state === 'published') published += 1;
       if (slot.state === 'blocked') {
@@ -171,11 +171,9 @@ describe('web publishing desk', () => {
   it('records a refused publish as a queue failure that the DLQ can replay', async () => {
     const desk = new PublishDesk(() => Date.now());
     for (let index = 0; index < 20; index += 1) {
-      const slot = desk.publishNext();
+      const slot = await desk.publishNext();
       if (!slot) break;
     }
-    // The refused slot enqueued a publish job and failed it, so it is replayed here.
-    await new Promise((resolve) => setTimeout(resolve, 10));
     const rows = await desk.rows();
     expect(rows.length).toBeGreaterThan(0);
 

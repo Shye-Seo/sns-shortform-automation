@@ -35,8 +35,8 @@ export function PublishingPanel() {
     })();
   }, []);
 
-  const publish = (): void => {
-    const slot = desk.publishNext();
+  const publish = async (): Promise<void> => {
+    const slot = await desk.publishNext();
     if (!slot) {
       setNote('예약된 슬롯이 없습니다.');
     } else if (slot.state === 'blocked') {
@@ -44,13 +44,13 @@ export function PublishingPanel() {
     } else {
       setNote(`${hhmmss(slot.atMs)} ${CHANNEL_LABEL[slot.channel]} 발행 완료 · ${slot.title}`);
     }
-    void refresh();
+    await refresh();
   };
 
   const drain = async (): Promise<void> => {
     setBusy(true);
     for (let index = 0; index < 12; index += 1) {
-      const slot = desk.publishNext();
+      const slot = await desk.publishNext();
       if (!slot) {
         setNote('남은 예약 슬롯이 없습니다.');
         break;
@@ -148,7 +148,7 @@ export function PublishingPanel() {
           hint="planPublishSlots가 창(09:00–22:00) 안에서 간격을 흔들어 배치합니다"
           actions={
             <>
-              <Button small onClick={publish}>
+              <Button small onClick={() => void publish()}>
                 다음 슬롯 발행
               </Button>
               <Button small primary disabled={busy} onClick={() => void drain()}>

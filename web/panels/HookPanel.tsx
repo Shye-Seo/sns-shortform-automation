@@ -47,7 +47,7 @@ export function HookPanel({ topic, onAdopt }: HookPanelProps) {
           sub={`신뢰도 ${pct(result.confidence * 100, 1)} · α=0.05`}
           tone={result.winner ? 'ok' : undefined}
         />
-        <Kpi label="필요 표본" value={`${num(result.requiredSample)}/안`} sub="완시율 기준 +5%p 검출" />
+        <Kpi label="필요 표본" value={`${num(result.requiredSample)}/안`} sub="완시율 상대 +5% 검출" />
         <Kpi
           label="쿠폰 전환 차이"
           value={`p=${result.coupon.pValue.toFixed(3)}`}
@@ -130,7 +130,7 @@ export function HookPanel({ topic, onAdopt }: HookPanelProps) {
 
         <Card
           title="승자 훅"
-          hint="주 지표(완시율)에서 유의하고, 상승폭이 5%p 이상일 때만 채택합니다"
+          hint="주 지표(완시율)에서 유의하고, 상승폭이 5%(상대) 이상일 때만 채택합니다"
           actions={
             result.winner ? (
               <Button
@@ -209,18 +209,19 @@ export function HookPanel({ topic, onAdopt }: HookPanelProps) {
                     <strong style={{ fontSize: 12.5 }}>{row.label}</strong>
                     <div className="small muted">{row.hint}</div>
                   </td>
-                  <td className="num">{pct(row.a.rate * 100, 1)}</td>
-                  <td className="num">{pct(row.b.rate * 100, 1)}</td>
+                  <td className="num">{row.a.trials === 0 ? '—' : pct(row.a.rate * 100, 1)}</td>
+                  <td className="num">{row.b.trials === 0 ? '—' : pct(row.b.rate * 100, 1)}</td>
                   <td className="num" style={{ color: row.lift >= 0 ? 'var(--ok)' : 'var(--bad)' }}>
-                    {row.lift >= 0 ? '+' : ''}
-                    {pct(row.lift * 100, 1)}
+                    {row.a.trials === 0 || row.b.trials === 0 ? '—' : `${row.lift >= 0 ? '+' : ''}${pct(row.lift * 100, 1)}`}
                   </td>
                   <td className="num mono">{row.pValue < 0.001 ? '<0.001' : row.pValue.toFixed(3)}</td>
                   <td>
                     <ConfidenceBar row={row} />
                   </td>
                   <td>
-                    {row.leader === null ? (
+                    {row.a.trials === 0 || row.b.trials === 0 ? (
+                      <Pill tone="ghost">데이터 없음</Pill>
+                    ) : row.leader === null ? (
                       <Pill tone="ghost">동일</Pill>
                     ) : row.significant ? (
                       <Pill tone="ok">{row.leader}안 우세</Pill>

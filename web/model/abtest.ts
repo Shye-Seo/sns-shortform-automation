@@ -81,9 +81,12 @@ function binomial(trials: number, probability: number, random: () => number): nu
   }
   const mean = trials * probability;
   const sd = Math.sqrt(trials * probability * (1 - probability));
+  // Twelve uniforms sum to mean 6 and variance 1 (Irwin–Hall), so `sum - 6` is
+  // already the standard normal deviate. Dividing by sqrt(1/12) would triple the
+  // spread and quietly make every test look noisier than the audience is.
   let sum = 0;
   for (let index = 0; index < 12; index += 1) sum += random();
-  const normal = (sum - 6) / Math.sqrt(1 / 12);
+  const normal = sum - 6;
   const draw = Math.round(mean + sd * normal);
   return Math.max(0, Math.min(trials, draw));
 }
