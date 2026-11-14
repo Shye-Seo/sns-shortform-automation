@@ -49,7 +49,7 @@ export function App() {
         <div className="meta">
           <Pill tone="ok">브라우저에서 엔진 실행</Pill>
           <Pill tone="ghost">외부 API 호출 없음</Pill>
-          <Pill tone="ghost">Vitest 422 · PHPUnit 125</Pill>
+          <Pill tone="ghost">Vitest 439 · PHPUnit 125</Pill>
         </div>
       </header>
 

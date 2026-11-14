@@ -312,7 +312,11 @@ export function StudioPanel(props: StudioPanelProps) {
                     <span className="small muted">
                       화면 자막 <span className="mono">{item.onScreenText ?? '-'}</span>
                     </span>
-                    <span className={over ? 'pill bad' : 'pill ghost'}>{`${item.durationSec.toFixed(2)}s · 훅 상한 3.50s`}</span>
+                    <span className={over ? 'pill bad' : 'pill ghost'}>
+                      {item.beat === 'hook'
+                        ? `${item.durationSec.toFixed(2)}s · 상한 3.50s`
+                        : `${item.durationSec.toFixed(2)}s · 예산 ${(budgetShare(item.beat, model)).toFixed(1)}s`}
+                    </span>
                   </div>
                 </div>
               );
@@ -322,6 +326,12 @@ export function StudioPanel(props: StudioPanelProps) {
 
         <Card title="타임라인" hint="비트 순서와 길이는 타임라인 빌더가 정합니다">
           <BeatStrip model={model} t={t} onSeek={setPlayhead} />
+          {durationSec - model.totalDurationSec > 0.5 ? (
+            <p className="note" style={{ marginTop: 10 }}>
+              남는 {(durationSec - model.totalDurationSec).toFixed(1)}초는 쓰지 않습니다. 홀드 시간은 씬당 0.6초로 막혀 있어서,
+              늘어난 시간을 프레임 정지로 채우는 대신 짧게 끝냅니다.
+            </p>
+          ) : null}
           <div className="scroll" style={{ marginTop: 10 }}>
             <table className="data">
               <thead>
@@ -425,6 +435,11 @@ export function StudioPanel(props: StudioPanelProps) {
       </div>
     </div>
   );
+}
+
+/** Per-beat speech budget from the engine's time-budget planner. */
+function budgetShare(beat: 'hook' | 'problem' | 'solution' | 'cta', model: StudioModel): number {
+  return model.budget.perBeatSec[beat];
 }
 
 function Caption({ cue, model, t }: { cue: Cue | null; model: StudioModel; t: number }) {
