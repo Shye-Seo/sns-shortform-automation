@@ -172,19 +172,22 @@ export function writeTopicDrafts(input: TopicDraftInput): TopicDraftResult {
   // every press, so consecutive presses never repeat the hook.
   const hook = pickAt(HOOK_TEMPLATES[angle.id], hash + Math.floor(variation / 5));
   const problem = pickAt(bank.problems, hash + variation);
-  const stepCount = Math.min(4, Math.max(2, Math.round(durationSec / 16)));
+  // Fill the chosen length with steps instead of leaving a third of the
+  // timeline empty: 30s → 2 steps, 45s → 4, 60s → 4 (bank size ceiling).
+  const stepCount = Math.min(4, Math.max(2, Math.round((durationSec - 15) / 7.5)));
   const start = variation % Math.max(1, bank.steps.length - stepCount + 1);
   const steps = bank.steps.slice(start, start + stepCount);
   const cta = pickAt(CTA_TEMPLATES[ctaGoal], hash + variation);
 
   const visual = CATEGORY_VISUAL[profile.category];
   const screens = bank.screens;
+  const angleIndex = ANGLE_LIST.findIndex((entry) => entry.id === angle.id);
 
   const drafts: SceneDraft[] = [
     {
       beat: 'hook',
       narration: `${fill(hook, profile, belief)}.`,
-      onScreenText: fill(pickAt(screens.hook, hash + variation), profile, belief),
+      onScreenText: fill(pickAt(screens.hook, angleIndex + hash + variation), profile, belief),
       emphasis: [profile.core],
       visual: visual[0],
     },
