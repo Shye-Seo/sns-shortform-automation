@@ -569,6 +569,12 @@ npm run cli -- slots --count 6 --start 09:00 --end 23:00 --min-gap 90
 npm run cli -- quota plan --provider youtube --jobs 8 --slot-start 08:00 --slot-end 23:00 --min-gap 30
 npm run cli -- quota plan --provider meta --jobs 30 --json
 npm run cli -- studio --html .work/studio.html
+
+# 크로스채널 기획 (주제 → 숏폼 + 롱폼 + 블로그)
+npm run cli -- crosschannel --topic "겨울 제주 여행 2박3일 코스" --duration 45 --out .work/plan.md
+npm run cli -- crosschannel --topic "팔꿈치 마사지기 리뷰" --variation 2 --blog wordpress
+npm run cli -- crosschannel --topic "청약 1순위 조건" --ref examples/kitchen.md --channel instagram-reels
+npm run cli -- crosschannel --topic "냉장고 재료로 10분 저녁" --llm --out .work/plan.md   # ANTHROPIC_API_KEY
 ```
 
 `queue`는 파일 상태(`.work/queue/state.json`)를 쓰기 때문에 `run`과 `status`가 서로 다른
@@ -593,7 +599,7 @@ npm run cli -- studio --html .work/studio.html
 ## 12. 검증
 
 ```bash
-npm run verify    # typecheck + lint + 461 tests (+ typecheck:web)
+npm run verify    # typecheck + typecheck:web + lint + 483 tests
 npm run coverage  # 86.0% statements · 80.4% branches
 ```
 
@@ -895,7 +901,7 @@ npx tsx -e "...simulateCommentStorm({ comments: 1000, concurrency: 256, clickRat
 
 ---
 
-## 18. 웹 데모 콘솔 — 9:16 스튜디오 · 댓글 DM · 발행 쿼터 · 훅 A/B
+## 18. 웹 데모 콘솔 — 주제연동 스튜디오 · 크로스채널 기획 · 댓글 DM · 발행 쿼터 · 훅 A/B
 
 **데모**: <https://shye-seo.github.io/sns-shortform-automation/>
 
@@ -906,7 +912,8 @@ npx tsx -e "...simulateCommentStorm({ comments: 1000, concurrency: 256, clickRat
 
 | 탭 | 확인하는 것 | 실행되는 코드 |
 |----|------------|---------------|
-| **9:16 스튜디오** | 4비트 대본 편집 → 타임라인 재계산, 안전영역 가이드 토글, 재생 위치에 맞춘 단어별 자막 강조, 발화 시 BGM 15% 감쇠 곡선 | `scriptEngine`(`planTimeBudget`·`fitDrafts`·`buildTimeline`), `tts.estimateAlignmentFor`, `audioEngine`(`computeDuckingEnvelope`·`buildCues`), `videoCompositor`(`planOverlayLayout`·`checkLayoutCollisions`) |
+| **9:16 스튜디오** | 주제를 바꾸면 대본·타임라인·자막이 즉시 다시 계산. '대본 다시 생성'은 앵글과 문장을 함께 교체. 안전영역 가이드, 재생 위치에 맞춘 단어별 자막 강조, 발화 시 BGM 15% 감쇠 곡선 | `topicProfile`(분류), `topicDraftWriter`(주제·앵글별 대본), `scriptEngine`(`planTimeBudget`·`fitDrafts`·`buildTimeline`), `tts.estimateAlignmentFor`, `audioEngine`(`computeDuckingEnvelope`·`buildCues`), `videoCompositor`(`planOverlayLayout`·`checkLayoutCollisions`) |
+| **크로스채널 기획** | 주제 하나로 릴스/쇼츠 대본 + 유튜브 롱폼 목차 + 네이버·티스토리·워드프레스 글 뼈대를 같은 단계 순서로 생성. 레퍼런스 글을 붙이면 훅 유형·단계 수·저장 유도를 읽어 앵글과 목차에 반영하고, 숏폼→챕터→H2 리퍼포징 맵을 표로 보여줌 | `topicProfile`, `patternLibrary`(6개 채널 구조), `contentAnalyzer`, `crossChannelPlanner`, `planMarkdown` |
 | **댓글 → DM 쿠폰** | 테스트 댓글 입력 → HMAC 서명 검증 → 큐 적재 → 어뷰징 차단 → 5초 안에 1회용 링크 발급 → 수령(1회) → 퍼널·ROAS | `core/interactiveCouponDispatcher` 전체 (워커 일시정지로 SLA 초과도 재현) |
 | **발행 캘린더 · 쿼터** | 지터가 들어간 예약 타임라인, Meta 25건/24h·YouTube 10,000 unit(업로드 1,600) 게이지, 한도 소진 시 발행 중단, DLQ 원클릭 재시도와 운영자 기록 | `rateLimit/jitter.planPublishSlots`, `rateLimit/tenantRegistry`, `queue/jobQueue`, `studio/dlqActions` |
 | **훅 A/B** | 같은 영상의 A/B 훅을 노출·3초 유지·완시·댓글·쿠폰 전환으로 비교, 표본 부족 시 판정 보류, 승자 채택 시 스튜디오 대본에 반영 | `telemetry/hooks.generateHookVariants`, `telemetry/significance`(`evaluateExperiment`·`twoProportionZTest`·`wilsonInterval`·`requiredSampleSize`) |
@@ -1027,6 +1034,71 @@ npm run cli -- quota plan --provider youtube --jobs 8 --slot-start 08:00 --slot-
 **한계**: 리셋 시각은 플랫폼 정책에서 오는 값이라 호출자가 넘깁니다(YouTube는 태평양 자정).
 실제 발행 시점의 플랫폼 카운터가 계획과 어긋나면, 어댑터의 429/`quotaExceeded` 응답이 정답이고
 계획은 다음 실행에서 그 값으로 다시 세워집니다.
+
+---
+
+## 20. 크로스채널 기획 엔진 — 주제 하나, 세 채널, 같은 단계
+
+라이브 데모에서 제기된 문제는 두 가지였습니다. **주제를 바꿔도 자막이 그대로**였고, **'대본 다시 생성'을
+눌러도 같은 문장**이 나왔습니다. 원인은 화면이 아니라 데이터 흐름이었습니다.
+
+1. `App`이 주제 입력을 `topic` 상태에만 넣고 `drafts`(대본 상태)는 그대로 뒀습니다. 스튜디오 모델은
+   `drafts.length >= 4`면 그 대본을 그대로 그리므로, 첫 화면의 "주방수납" 대본이 주제를 바꿔도 남았습니다.
+2. 휴리스틱 작가는 `hash(주제 + 훅타입 + CTA)`로 템플릿을 고르는 **순수 함수**였습니다. 같은 주제면
+   같은 인덱스가 나오고, 카테고리 개념이 없어 명사만 치환됐습니다.
+3. 미리보기 배지가 `KITCHEN 3평`으로 하드코딩돼 있어 주제와 무관한 라벨이 남았습니다.
+
+수정은 세 층으로 나눴습니다.
+
+### 20.1 주제 → 카테고리 (`topicProfile`)
+
+주제 문자열에서 카테고리(여행·제품·정보·요리·수납·뷰티·돈·건강·커리어·일상)를 점수로 고르고,
+그 카테고리의 **레버**를 뽑습니다. 여행은 `이동 동선`, 제품 리뷰는 `소음·무게·충전`, 신청·조건은
+`자격 조건`, 요리는 `재료 순서`입니다. 훅은 이 레버를 가리키므로 "주제만 바꾼 같은 대본"이 나오지 않습니다.
+
+### 20.2 앵글 × 변주 (`topicDraftWriter`)
+
+| 앵글 | 훅 방식 | 잘 맞는 주제 |
+|------|---------|--------------|
+| 문제해결형 | 질문형 · 막히는 지점 지적 | 수납, 동선, 조건 |
+| 숫자비교형 | 숫자 제시형 | 시간·비용·개수로 약속되는 주제 |
+| 체크리스트형 | 목록 예고형 | 신청·구매·여행 |
+| 비포애프터형 | 결과 선노출형 | 리뷰·인테리어·운동 |
+| 반전형 | 통념 반박형 | 모두가 같은 말을 하는 주제 |
+
+`variation`이 1 올라갈 때마다 앵글이 5개를 순환하고, 같은 앵글 안에서도 문장 인덱스와 단계 구간이
+함께 밀립니다. 그래서 연속 6번을 눌러도 훅·문제·단계·CTA·캡션이 모두 다릅니다(테스트로 고정).
+단계 문장은 카테고리 뱅크에서 **연속 구간**으로 뽑기 때문에 순서가 깨지지 않습니다.
+
+### 20.3 채널 구조 (`patternLibrary`)와 분석 (`contentAnalyzer`)
+
+채널마다 구조가 다릅니다. 릴스는 1.5초 훅 + 저장 트리거, 쇼츠는 결론 선노출 + 검색 제목,
+롱폼은 콜드오픈 + 챕터, 블로그는 목차 + 표 + FAQ입니다. 이 구조를 `ChannelPattern`으로 내장했고,
+`segments`의 합은 100%입니다(테스트). 수치는 **플랫폼 제한과 작성 규칙**이며 성과 지표가 아닙니다.
+
+`analyzeReference`는 붙여넣은 글에서 첫 줄 훅 유형, 번호 단계 수, 저장·공유 유도, 문장 길이,
+CTA 문장을 읽습니다. 레퍼런스가 있으면 그 훅 앵글을 시작점으로 삼고, 단계 수와 저장 유도 횟수를
+숏폼·롱폼·블로그 배분에 반영합니다. 브라우저는 다른 사이트를 읽을 수 없어 텍스트만 받고,
+URL은 CLI(`--ref-url`)에서 HTML을 텍스트로 바꿔 분석합니다.
+
+### 20.4 리퍼포징 맵
+
+`planCrossChannel`은 숏폼 장면 → 롱폼 챕터 → 블로그 H2를 1:1로 잇는 표를 만듭니다. 블로그 문단은
+숏폼과 **같은 단계 순서**를 쓰므로, 영상에서 본 순서가 글에서 뒤집히지 않습니다.
+
+### 20.5 LLM은 덮어쓰기만
+
+패턴 엔진이 항상 먼저 완성본을 만들고, `ANTHROPIC_API_KEY`가 있으면 같은 스키마로 Claude에
+재작성을 요청합니다. 응답은 필드 단위로 검증해 유효한 것만 덮어쓰고, 키가 없거나 호출이 실패하면
+오프라인 결과가 그대로 최종본이 됩니다. 데모 콘솔에는 키가 없으므로 브라우저는 네트워크를 쓰지 않습니다.
+
+```bash
+npm run cli -- crosschannel --topic "겨울 제주 여행 2박3일 코스" --out .work/plan.md
+```
+
+**한계**: 패턴은 공개 크리에이터 가이드와 상위 글에서 반복되는 구조를 규칙화한 휴리스틱이며,
+조회수·저장률 같은 성과를 실측한 데이터가 아닙니다. 한국어 카테고리 뱅크가 기준이라 영어 주제는
+기존 휴리스틱 작가로 폴백합니다. LLM 경로는 응답 스키마를 검증하지만 사실 관계를 검증하지 않습니다.
 
 ---
 

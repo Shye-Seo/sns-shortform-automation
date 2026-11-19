@@ -36,6 +36,12 @@ import { StudioApi } from './services/studio/api';
 import { DlqActionService } from './services/studio/dlqActions';
 import { startStudioServer } from './services/studio/server';
 import { createDemoStudio } from './services/studio/demo';
+import { fetchReferenceText } from './lib/referenceText';
+import { buildPlannerPrompt, planCrossChannel } from './services/crossChannelPlanner';
+import { planToMarkdown } from './services/planMarkdown';
+import { planWithClaude } from './services/llmPlanner';
+import { CHANNEL_LABEL } from './services/patternLibrary';
+import type { AngleChoice, BlogPlatform, ChannelId, PlanInput } from './types/plan';
 import type { Platform } from './types/render';
 import type { PublishPayload } from './types/publish';
 
@@ -178,6 +184,116 @@ program
             : '',
           '',
         ].join('\n'),
+      );
+    } catch (error) {
+      fail(error);
+    }
+  });
+
+/* ── crosschannel ───────────────────────────────────────────────────────── */
+
+program
+  .command('crosschannel')
+  .description('주제 하나 → 숏폼 대본 + 유튜브 롱폼 목차 + 블로그 뼈대 (선택: Claude 재작성)')
+  .option('--topic <text>', '주제 한 줄')
+  .option('--duration <sec>', '숏폼 목표 길이', '45')
+  .option('--angle <angle>', 'auto | problem-solve | numbers | checklist | before-after | contrarian', 'auto')
+  .option('--variation <n>', '변주 번호 — 올리면 앵글과 문장이 함께 바뀐다', '0')
+  .option('--cta <goal>', 'follow | save | comment | link', 'save')
+  .option('--blog <platform>', 'naver-blog | tistory | wordpress', 'naver-blog')
+  .option('--ref <file>', '참고 글 텍스트 파일 (txt/md)')
+  .option('--ref-url <url>', '참고 글 URL — HTML을 텍스트로 바꿔 분석')
+  .option('--channel <channel>', '레퍼런스 채널', 'instagram-reels')
+  .option('--llm', 'Claude로 재작성 (ANTHROPIC_API_KEY 필요)')
+  .option('--model <name>', 'Claude 모델', process.env.ANTHROPIC_MODEL ?? 'claude-sonnet-4-5')
+  .option('--prompt', 'LLM에 보낼 프롬프트만 출력')
+  .option('--out <file>', 'Markdown 파일로 저장')
+  .option('--json', 'JSON으로 출력')
+  .action(async (options) => {
+    try {
+      if (!options.topic) {
+        throw new ShortformError('--topic 이 필요합니다', { code: 'VALIDATION' });
+      }
+
+      let referenceText: string | null = null;
+      let referenceSource = '';
+      if (options.ref) {
+        referenceText = await readFile(options.ref, 'utf8');
+        referenceSource = options.ref;
+      } else if (options.refUrl) {
+        const fetched = await fetchReferenceText(options.refUrl);
+        referenceText = fetched.text;
+        referenceSource = `${fetched.title} (${fetched.url})`;
+      }
+
+      const input: PlanInput = {
+        topic: options.topic,
+        durationSec: Number(options.duration),
+        angle: options.angle as AngleChoice,
+        variation: Number(options.variation),
+        ctaGoal: options.cta,
+        blogPlatform: options.blog as BlogPlatform,
+        reference: referenceText
+          ? { text: referenceText, channel: options.channel as ChannelId }
+          : null,
+      };
+
+      const base = planCrossChannel(input);
+      let plan = base;
+      let llmNote: string | null = null;
+
+      if (options.llm) {
+        const result = await planWithClaude(input, { model: options.model });
+        if (result.plan) plan = result.plan;
+        llmNote = result.error ?? `Claude 재작성 완료 (${result.model})`;
+      }
+
+      if (options.prompt) {
+        process.stdout.write(`${buildPlannerPrompt(base)}\n`);
+        return;
+      }
+
+      if (options.out) {
+        await writeFile(resolve(options.out), planToMarkdown(plan));
+      }
+
+      if (options.json) {
+        printJson({ plan, engine: plan.engine, llm: llmNote, referenceSource: referenceSource || null });
+        return;
+      }
+
+      const steps = plan.shorts.scenes.filter((scene) => scene.beat === 'solution');
+      process.stdout.write(
+        [
+          '',
+          `🧭 ${plan.topic}`,
+          `   분류 ${plan.profile.categoryLabel} · 앵글 ${plan.angle.label}(${plan.angle.hookStyle}) · 변주 ${plan.variation + 1}`,
+          `   엔진 ${plan.engineDetail}`,
+          referenceText ? `   레퍼런스 ${referenceSource} → ${CHANNEL_LABEL[plan.reference?.channel ?? 'instagram-reels']}` : '',
+          '',
+          `   ▸ 숏폼 ${plan.durationSec}초 (${plan.shorts.scenes.length}장면)`,
+          ...plan.shorts.scenes.map(
+            (scene, index) =>
+              `     ${String(index + 1).padStart(2)}. [${scene.beat.padEnd(8)}] ${scene.narration}`,
+          ),
+          '',
+          `   ▸ 롱폼 «${plan.longform.title}» 약 ${plan.longform.estimatedMinutes}분 · 챕터 ${plan.longform.chapters.length}개`,
+          ...plan.longform.chapters.map((chapter) => `     ${chapter.index}. ${chapter.title} — ${chapter.purpose}`),
+          '',
+          `   ▸ 블로그 (${CHANNEL_LABEL[plan.blog.platform]}) 약 ${plan.blog.targetChars}자 · H2 ${plan.blog.outline.length}개 + FAQ ${plan.blog.faq.length}개`,
+          `     키워드 «${plan.blog.primaryKeyword}»`,
+          `     제목 후보: ${plan.blog.titleCandidates.join(' / ')}`,
+          '',
+          `   ▸ 리퍼포징 ${plan.repurpose.length}행 — 숏폼 ${steps.length}단계가 챕터·H2로 이어짐`,
+          plan.reference
+            ? `   ▸ 레퍼런스 분석: ${plan.reference.hookStyle} · 단계 ${plan.reference.numberedSteps}개 · 저장 유도 ${plan.reference.saveTriggers.length}회`
+            : '',
+          llmNote ? `   ⚠ ${llmNote}` : '',
+          options.out ? `   저장: ${resolve(options.out)}` : '',
+          '',
+        ]
+          .filter((line) => line !== '')
+          .join('\n') + '\n',
       );
     } catch (error) {
       fail(error);

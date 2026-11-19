@@ -8,6 +8,24 @@ export { ScriptEngine, createScriptEngine, planTimeBudget, compressText, buildTi
 export type { ScriptModel, ScriptEngineOptions, CraftResult, SceneDraft, TimeBudget } from './services/scriptEngine';
 
 export {
+  planCrossChannel,
+  buildPlannerPrompt,
+  buildLongform,
+  buildBlog,
+  buildRepurpose,
+  applyLlmPlan,
+} from './services/crossChannelPlanner';
+export { planWithClaude, sanitizePayload } from './services/llmPlanner';
+export type { LlmPlanOptions, LlmPlanResult } from './services/llmPlanner';
+export { planToMarkdown } from './services/planMarkdown';
+export { classifyTopic, detectCategory, detectIntent, CATEGORY_META } from './services/topicProfile';
+export { analyzeReference } from './services/contentAnalyzer';
+export { writeTopicDrafts, resolveAngle, badgeFor, describeAngle } from './services/topicDraftWriter';
+export { ANGLE_LIST, ANGLE_BY_ID, PATTERN_LIBRARY, PATTERN_BY_CHANNEL, CHANNEL_LABEL } from './services/patternLibrary';
+export { TOPIC_BANKS } from './services/topicBanks';
+export { fetchReferenceText, htmlToText } from './lib/referenceText';
+
+export {
   AudioEngine,
   buildCues,
   buildAss,

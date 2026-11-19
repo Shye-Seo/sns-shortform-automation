@@ -6,8 +6,10 @@ import { PLATFORM_UI_ZONES } from '../../src/services/videoCompositor';
 import type { Cue, WordTiming } from '../../src/types/audio';
 import { CANVAS } from '../../src/types/render';
 import type { Language } from '../../src/types/script';
+import type { AngleChoice } from '../../src/types/plan';
+import { ANGLE_LIST } from '../../src/services/patternLibrary';
 import { Button, Card, Kpi, Pill, Toggle, clock, pct, sec } from '../ui';
-import { BEAT_HINT, BEAT_LABEL, buildStudioModel, cueAt, draftBeatScene, gainAt, sceneAt, type StudioModel } from '../model/studio';
+import { BEAT_HINT, BEAT_LABEL, buildStudioModel, cueAt, gainAt, sceneAt, type StudioModel } from '../model/studio';
 
 const FONT_CQW = (px: number): string => `${((px / CANVAS.width) * 100).toFixed(3)}cqw`;
 const pctX = (value: number): string => `${((value / CANVAS.width) * 100).toFixed(3)}%`;
@@ -25,18 +27,41 @@ export interface StudioPanelProps {
   compress: boolean;
   onCompress: (value: boolean) => void;
   language: Language;
+  angle: AngleChoice;
+  onAngle: (value: AngleChoice) => void;
+  variation: number;
+  /** Bump the variation: new angle, new phrasing, new captions. */
+  onRegenerate: () => void;
+  onOpenPlan: () => void;
 }
 
 export function StudioPanel(props: StudioPanelProps) {
-  const { topic, onTopic, durationSec, onDuration, speed, onSpeed, drafts, onDrafts, compress, onCompress } = props;
+  const {
+    topic,
+    onTopic,
+    durationSec,
+    onDuration,
+    speed,
+    onSpeed,
+    drafts,
+    onDrafts,
+    compress,
+    onCompress,
+    angle,
+    onAngle,
+    variation,
+    onRegenerate,
+    onOpenPlan,
+  } = props;
+  const activeAngle = ANGLE_LIST.find((item) => item.id === angle);
   const [safeArea, setSafeArea] = useState(true);
   const [playing, setPlaying] = useState(false);
   const [t, setT] = useState(0);
   const tRef = useRef(0);
 
   const model = useMemo(
-    () => buildStudioModel({ topic, durationSec, speed, language: 'ko', drafts, compress }),
-    [topic, durationSec, speed, drafts, compress],
+    () => buildStudioModel({ topic, durationSec, speed, language: 'ko', drafts, compress, angle, variation }),
+    [topic, durationSec, speed, drafts, compress, angle, variation],
   );
 
   const setPlayhead = (value: number): void => {
@@ -132,7 +157,7 @@ export function StudioPanel(props: StudioPanelProps) {
                     fontSize: FONT_CQW(34),
                   }}
                 >
-                  KITCHEN 3평
+                  {model.badgeText}
                 </div>
               ) : null}
 
@@ -219,19 +244,43 @@ export function StudioPanel(props: StudioPanelProps) {
 
         <Card
           title="4비트 대본"
-          hint="훅 → 문제 → 해결 → CTA. 문장을 고치면 아래 타임라인이 즉시 다시 계산됩니다."
+          hint="주제를 바꾸면 대본·타임라인·자막이 새로 계산됩니다. '대본 다시 생성'은 앵글과 문장을 함께 바꿉니다."
           actions={
-            <Button small onClick={() => onDrafts(draftBeatScene(topic, durationSec))} title="엔진 휴리스틱으로 대본을 다시 뽑습니다">
-              대본 다시 생성
-            </Button>
+            <>
+              <Button small onClick={onOpenPlan} ghost title="같은 주제로 롱폼·블로그까지 엮은 기획 보기">
+                크로스채널 기획
+              </Button>
+              <Button small onClick={onRegenerate} primary title="새 앵글·새 문장으로 대본을 다시 뽑습니다">
+                대본 다시 생성
+              </Button>
+            </>
           }
         >
+          <div className="row" style={{ marginBottom: 8, alignItems: 'center' }}>
+            <Pill tone="ok">{activeAngle ? activeAngle.label : '앵글 자동'}</Pill>
+            <span className="small muted">
+              {activeAngle ? activeAngle.hookStyle : '주제에 맞는 앵글을 엔진이 고릅니다'} · 변주 {variation + 1}
+            </span>
+            <Pill tone="ghost">{model.badgeText}</Pill>
+          </div>
+
           <div className="row" style={{ marginBottom: 12, alignItems: 'flex-end' }}>
-            <div className="field" style={{ flex: '2 1 240px' }}>
+            <div className="field" style={{ flex: '2 1 220px' }}>
               <span>주제</span>
               <input type="text" value={topic} onChange={(event) => onTopic(event.target.value)} />
             </div>
-            <div className="field" style={{ flex: '0 0 104px' }}>
+            <div className="field" style={{ flex: '0 0 128px' }}>
+              <span>앵글</span>
+              <select value={angle} onChange={(event) => onAngle(event.target.value as AngleChoice)}>
+                <option value="auto">자동 (순환)</option>
+                {ANGLE_LIST.map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="field" style={{ flex: '0 0 92px' }}>
               <span>길이</span>
               <select value={durationSec} onChange={(event) => onDuration(Number(event.target.value))}>
                 {[30, 45, 60].map((value) => (

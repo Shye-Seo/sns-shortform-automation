@@ -905,6 +905,22 @@ svg.envelope {
   color: var(--muted);
 }
 
+.prompt-box {
+  margin: 0;
+  padding: 10px 12px;
+  background: #f7f9fc;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  font-family: var(--mono);
+  font-size: 11px;
+  line-height: 1.65;
+  color: var(--ink-2);
+  white-space: pre-wrap;
+  overflow-x: auto;
+  max-height: 260px;
+  overflow-y: auto;
+}
+
 .divider {
   height: 1px;
   background: var(--line);

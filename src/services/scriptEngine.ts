@@ -13,6 +13,7 @@ import {
   truncate,
   type Keyword,
 } from '../lib/text';
+import { angleForHookType, writeTopicDrafts } from './topicDraftWriter';
 import {
   LIMITS,
   ScriptRequestSchema,
@@ -1237,6 +1238,15 @@ export class ScriptEngine {
         );
         generationSource = 'heuristic-fallback';
       }
+    } else if (request.language === 'ko' && !request.rawText) {
+      // No model and no source text: write from the topic's category and angle
+      // rather than substituting the noun into one generic template set.
+      drafts = writeTopicDrafts({
+        topic: request.topic,
+        durationSec: request.targetDurationSec,
+        angle: angleForHookType(request.hookType),
+        ctaGoal: request.ctaGoal,
+      }).drafts;
     } else {
       drafts = draftScenesHeuristic(
         {

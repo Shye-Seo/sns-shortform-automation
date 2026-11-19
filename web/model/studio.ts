@@ -1,12 +1,8 @@
 import { buildCues, computeDuckingEnvelope, sampleEnvelope } from '../../src/services/audioEngine';
-import {
-  buildTimeline,
-  draftScenesHeuristic,
-  fitDrafts,
-  planTimeBudget,
-  type SceneDraft,
-  type TimeBudget,
-} from '../../src/services/scriptEngine';
+import { buildTimeline, fitDrafts, planTimeBudget, type SceneDraft, type TimeBudget } from '../../src/services/scriptEngine';
+import { badgeFor, resolveAngle, writeTopicDrafts } from '../../src/services/topicDraftWriter';
+import { classifyTopic } from '../../src/services/topicProfile';
+import type { AngleChoice } from '../../src/types/plan';
 import { estimateAlignmentFor } from '../../src/services/tts';
 import { checkLayoutCollisions, planOverlayLayout } from '../../src/services/videoCompositor';
 import { estimateSpeechSeconds, measureTextPx } from '../../src/lib/text';
@@ -40,10 +36,15 @@ export interface StudioInput {
   drafts: SceneDraft[];
   /** Run the engine's compression passes when a line overruns its beat budget. */
   compress: boolean;
+  /** On-screen category label. Derived from the topic when omitted. */
+  badgeText?: string;
+  angle?: AngleChoice;
+  variation?: number;
 }
 
 export interface StudioModel {
   request: ScriptRequest;
+  badgeText: string;
   budget: TimeBudget;
   scenes: Scene[];
   compression: CompressionReport;
@@ -62,21 +63,46 @@ export interface StudioModel {
   widestCueWidthPx: number;
 }
 
-export function makeRequest(topic: string, durationSec: number, speed: number, language: Language = 'ko'): ScriptRequest {
+const HOOK_TYPE_BY_ANGLE = {
+  'problem-solve': 'question',
+  numbers: 'numbers',
+  checklist: 'howto',
+  'before-after': 'howto',
+  contrarian: 'contrarian',
+} as const;
+
+export function makeRequest(
+  topic: string,
+  durationSec: number,
+  speed: number,
+  language: Language = 'ko',
+  angle: AngleChoice = 'auto',
+  variation = 0,
+): ScriptRequest {
+  const safeTopic = topic.trim() === '' ? '오늘의 주제 정리' : topic;
+  const resolved = resolveAngle(angle, safeTopic, variation);
   return ScriptRequestSchema.parse({
-    topic: topic.trim() === '' ? '부산 신혼집 주방 수납' : topic,
+    topic: safeTopic,
     language,
     targetDurationSec: Math.min(60, Math.max(10, durationSec)),
     speed: Math.min(1.3, Math.max(0.8, speed)),
-    hookType: 'question',
+    hookType: HOOK_TYPE_BY_ANGLE[resolved.id],
     ctaGoal: 'comment',
   });
 }
 
-/** Engine draft for a topic: one hook, one problem, N solution steps, one CTA. */
-export function draftBeatScene(topic: string, durationSec: number): SceneDraft[] {
-  const request = makeRequest(topic, durationSec, 1);
-  return draftScenesHeuristic({ request, keywords: [] }, { targetDurationSec: durationSec });
+/**
+ * Fresh draft for a topic at a given variation. The angle rotates every five
+ * presses and the phrasing rotates on every press, so two calls with the same
+ * topic never return the same captions.
+ */
+export function draftBeatScene(
+  topic: string,
+  durationSec: number,
+  variation = 0,
+  angle: AngleChoice = 'auto',
+): SceneDraft[] {
+  return writeTopicDrafts({ topic, durationSec, variation, angle }).drafts;
 }
 
 function measureAll(drafts: SceneDraft[], request: ScriptRequest): number {
@@ -90,8 +116,13 @@ function measureAll(drafts: SceneDraft[], request: ScriptRequest): number {
 }
 
 export function buildStudioModel(input: StudioInput): StudioModel {
-  const request = makeRequest(input.topic, input.durationSec, input.speed, input.language);
-  const drafts = input.drafts.length >= 4 ? input.drafts : draftBeatScene(input.topic, input.durationSec);
+  const variation = input.variation ?? 0;
+  const angle = input.angle ?? 'auto';
+  const request = makeRequest(input.topic, input.durationSec, input.speed, input.language, angle, variation);
+  const drafts =
+    input.drafts.length >= 4 ? input.drafts : draftBeatScene(input.topic, input.durationSec, variation, angle);
+  const profile = classifyTopic(input.topic);
+  const badgeText = input.badgeText ?? badgeFor(profile);
   const budget = planTimeBudget({
     targetDurationSec: request.targetDurationSec,
     language: request.language,
@@ -154,7 +185,7 @@ export function buildStudioModel(input: StudioInput): StudioModel {
   // The renderer wraps cues to the caption box width (see pipeline.ts), so the
   // preview must wrap at the same number or it draws lines the render never has.
   const layout = planOverlayLayout('instagram-reels', {
-    badgeText: 'KITCHEN 3평',
+    badgeText,
     captionLines: 2,
   });
   const cues = buildCues(words, { maxWidthPx: layout.caption.w });
@@ -173,6 +204,7 @@ export function buildStudioModel(input: StudioInput): StudioModel {
 
   return {
     request,
+    badgeText,
     budget,
     scenes: timeline.scenes,
     compression,

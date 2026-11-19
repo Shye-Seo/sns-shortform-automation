@@ -44,6 +44,16 @@ async function click(label: string): Promise<void> {
 
 const text = (): string => (container.textContent ?? '').replace(/\s+/g, ' ');
 
+/** React 18 listens for the native input event, so set the value through the prototype. */
+async function typeInto(input: HTMLInputElement | HTMLTextAreaElement, value: string): Promise<void> {
+  const prototype = input instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+  const setter = Object.getOwnPropertyDescriptor(prototype, 'value')?.set;
+  await act(async () => {
+    setter?.call(input, value);
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+  });
+}
+
 beforeEach(async () => {
   container = document.createElement('div');
   document.body.appendChild(container);
@@ -73,6 +83,42 @@ describe('web console', () => {
     expect(container.querySelector('svg.envelope')).not.toBeNull();
     // Safe-area guides are drawn from the platform's reserved rectangles.
     expect(container.querySelectorAll('.phone .zone').length).toBe(3);
+  });
+
+  it('re-derives the script and captions when the topic changes, and on every regenerate', async () => {
+    expect(text()).toContain('주방');
+    const topicInput = container.querySelector('input[type="text"]') as HTMLInputElement;
+    const hookField = container.querySelector('textarea') as HTMLTextAreaElement;
+    const before = hookField.value;
+
+    await typeInto(topicInput, '겨울 제주 여행 2박3일 코스');
+
+    const afterTopic = (container.querySelector('textarea') as HTMLTextAreaElement).value;
+    expect(afterTopic).not.toBe(before);
+    expect(afterTopic).toContain('제주');
+    expect(text()).not.toContain('주방');
+
+    await click('대본 다시 생성');
+    const afterRegenerate = (container.querySelector('textarea') as HTMLTextAreaElement).value;
+    expect(afterRegenerate).not.toBe(afterTopic);
+
+    // The on-screen badge follows the topic too — no fixed kitchen label.
+    expect(text()).not.toContain('KITCHEN');
+    expect(text()).toContain('크로스채널 기획');
+  });
+
+  it('plans the same topic for shortform, longform and a blog skeleton', async () => {
+    await click('크로스채널 기획');
+    expect(text()).toContain('크로스채널 기획 엔진');
+    expect(text()).toContain('리퍼포징 맵');
+    expect(text()).toContain('유튜브 롱폼 목차');
+    expect(text()).toContain('블로그 뼈대');
+    expect(text()).toContain('숏폼 대본');
+
+    const topicInput = container.querySelector('input[type="text"]') as HTMLInputElement;
+    await typeInto(topicInput, '팔꿈치 마사지기 리뷰');
+    expect(text()).toContain('팔꿈치 마사지기');
+    expect(text()).toContain('제품·리뷰');
   });
 
   it('runs one comment → DM → claim cycle from the coupon panel', async () => {

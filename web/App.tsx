@@ -1,16 +1,19 @@
 import { useState } from 'react';
 import type { SceneDraft } from '../src/services/scriptEngine';
+import type { AngleChoice } from '../src/types/plan';
 import { Pill } from './ui';
 import { StudioPanel } from './panels/StudioPanel';
 import { CouponPanel } from './panels/CouponPanel';
 import { PublishingPanel } from './panels/PublishingPanel';
 import { HookPanel } from './panels/HookPanel';
+import { CrossChannelPanel } from './panels/CrossChannelPanel';
 import { draftBeatScene } from './model/studio';
 
-type TabId = 'studio' | 'coupon' | 'calendar' | 'hooks';
+type TabId = 'studio' | 'plan' | 'coupon' | 'calendar' | 'hooks';
 
 const TABS: Array<{ id: TabId; label: string }> = [
   { id: 'studio', label: '9:16 스튜디오' },
+  { id: 'plan', label: '크로스채널 기획' },
   { id: 'coupon', label: '댓글 → DM 쿠폰' },
   { id: 'calendar', label: '발행 캘린더 · 쿼터' },
   { id: 'hooks', label: '훅 A/B' },
@@ -24,10 +27,35 @@ export function App() {
   const [durationSec, setDurationSec] = useState(45);
   const [speed, setSpeed] = useState(1);
   const [compress, setCompress] = useState(true);
-  const [drafts, setDrafts] = useState<SceneDraft[]>(() => draftBeatScene(DEFAULT_TOPIC, 45));
+  const [angle, setAngle] = useState<AngleChoice>('auto');
+  const [variation, setVariation] = useState(0);
+  const [drafts, setDrafts] = useState<SceneDraft[]>(() => draftBeatScene(DEFAULT_TOPIC, 45, 0, 'auto'));
 
-  const regenerate = (nextTopic: string): void => {
-    setDrafts(draftBeatScene(nextTopic, durationSec));
+  /**
+   * The topic is the input the script is derived from, so changing it has to
+   * re-derive the script. Previously the topic field only updated its own state
+   * and the old drafts stayed in place — the captions kept saying "주방수납"
+   * no matter what was typed.
+   */
+  const changeTopic = (value: string): void => {
+    setTopic(value);
+    setDrafts(draftBeatScene(value, durationSec, variation, angle));
+  };
+
+  const regenerate = (): void => {
+    const next = variation + 1;
+    setVariation(next);
+    setDrafts(draftBeatScene(topic, durationSec, next, angle));
+  };
+
+  const changeAngle = (value: AngleChoice): void => {
+    setAngle(value);
+    setDrafts(draftBeatScene(topic, durationSec, variation, value));
+  };
+
+  const changeDuration = (value: number): void => {
+    setDurationSec(value);
+    setDrafts(draftBeatScene(topic, value, variation, angle));
   };
 
   const adoptHook = (text: string): void => {
@@ -40,16 +68,16 @@ export function App() {
       <header className="masthead">
         <div>
           <p className="eyebrow">sns-shortform-automation</p>
-          <h1>숏폼 스튜디오 &amp; 댓글 쿠폰 콘솔</h1>
+          <h1>숏폼 스튜디오 &amp; 크로스채널 기획 콘솔</h1>
           <p>
-            대본 타임라인·오디오 더킹·키네틱 자막·안전영역, 인스타 댓글 → 5초 DM 쿠폰, 예약 발행과 API 쿼터,
-            훅 A/B 판정까지 한 화면에서 확인합니다. 화면의 숫자는 모두 저장소의 엔진 코드가 계산한 값입니다.
+            주제 하나로 4비트 대본·타임라인·키네틱 자막을 다시 계산하고, 릴스·쇼츠·롱폼·블로그 패턴까지 엮어
+            기획합니다. 인스타 댓글 → 5초 DM 쿠폰, 예약 발행 쿼터와 훅 A/B 판정도 같은 화면에서 확인합니다.
           </p>
         </div>
         <div className="meta">
           <Pill tone="ok">브라우저에서 엔진 실행</Pill>
           <Pill tone="ghost">외부 API 호출 없음</Pill>
-          <Pill tone="ghost">Vitest 439 · PHPUnit 125</Pill>
+          <Pill tone="ghost">주제 변경 → 대본·자막 재계산</Pill>
         </div>
       </header>
 
@@ -71,14 +99,9 @@ export function App() {
       {tab === 'studio' ? (
         <StudioPanel
           topic={topic}
-          onTopic={(value) => {
-            setTopic(value);
-          }}
+          onTopic={changeTopic}
           durationSec={durationSec}
-          onDuration={(value) => {
-            setDurationSec(value);
-            regenerate(topic);
-          }}
+          onDuration={changeDuration}
           speed={speed}
           onSpeed={setSpeed}
           drafts={drafts}
@@ -86,7 +109,16 @@ export function App() {
           compress={compress}
           onCompress={setCompress}
           language="ko"
+          angle={angle}
+          onAngle={changeAngle}
+          variation={variation}
+          onRegenerate={regenerate}
+          onOpenPlan={() => setTab('plan')}
         />
+      ) : null}
+
+      {tab === 'plan' ? (
+        <CrossChannelPanel topic={topic} onTopic={changeTopic} onBackToStudio={() => setTab('studio')} />
       ) : null}
 
       {tab === 'coupon' ? <CouponPanel /> : null}
