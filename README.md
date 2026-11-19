@@ -1,7 +1,7 @@
 <p align="center">
   <a href="https://github.com/Shye-Seo/sns-shortform-automation/actions/workflows/ci.yml"><img alt="CI Pipeline" src="https://github.com/Shye-Seo/sns-shortform-automation/actions/workflows/ci.yml/badge.svg" /></a>
   <img alt="Tests" src="https://img.shields.io/badge/tests-586_(Vitest_461_%C2%B7_PHPUnit_125)-2E7D32?style=flat-square" />
-  <a href="https://shye-seo.github.io/sns-shortform-automation/"><img alt="Live demo" src="https://img.shields.io/badge/live_demo-browser_console-13315C?style=flat-square" /></a>
+  <img alt="Web demo" src="https://img.shields.io/badge/web_demo-in_docs/(Pages_setup_needed)-13315C?style=flat-square" />
 </p>
 
 # shortform-engine
@@ -32,7 +32,8 @@ npm run cli -- studio         # 터미널 데모 콘솔
 npm run dev:web               # 브라우저 콘솔 → http://127.0.0.1:4173
 ```
 
-**웹 데모**: <https://shye-seo.github.io/sns-shortform-automation/> — 9:16 스튜디오 프리뷰,
+**웹 데모**: 정적 번들이 `docs/`에 빌드되어 있습니다. 저장소 Settings › Pages에서 소스를 `main` / `/docs`로
+지정하면 <https://shye-seo.github.io/sns-shortform-automation/> 에서 열립니다. 9:16 스튜디오 프리뷰,
 인스타 댓글 → DM 쿠폰, 예약 발행·쿼터·DLQ, 훅 A/B를 설치 없이 클릭으로 확인합니다(18장).
 
 ---
@@ -896,10 +897,12 @@ npx tsx -e "...simulateCommentStorm({ comments: 1000, concurrency: 256, clickRat
 
 ## 18. 웹 데모 콘솔 — 9:16 스튜디오 · 댓글 DM · 발행 쿼터 · 훅 A/B
 
-**라이브**: <https://shye-seo.github.io/sns-shortform-automation/>
+**데모**: <https://shye-seo.github.io/sns-shortform-automation/>
 
-빌드된 정적 산출물이 `docs/`에 있습니다. 설치 없이 열리고, 클릭으로 동작합니다. 화면의 숫자는
-미리 만들어 둔 값이 아니라 브라우저에서 같은 엔진 모듈을 실행한 결과입니다.
+빌드된 정적 산출물이 `docs/`에 있습니다. 저장소 Settings › Pages에서 소스를 `main` / `/docs`로 지정하면
+위 주소에서 열립니다(연결 앱 권한상 Pages 설정 API는 403이라 저장소 소유자가 한 번 지정해야 합니다).
+설치 없이 열리고, 클릭으로 동작합니다. 화면의 숫자는 미리 만들어 둔 값이 아니라 브라우저에서 같은
+엔진 모듈을 실행한 결과입니다.
 
 | 탭 | 확인하는 것 | 실행되는 코드 |
 |----|------------|---------------|
