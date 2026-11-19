@@ -1,6 +1,6 @@
 <p align="center">
   <a href="https://github.com/Shye-Seo/sns-shortform-automation/actions/workflows/ci.yml"><img alt="CI Pipeline" src="https://github.com/Shye-Seo/sns-shortform-automation/actions/workflows/ci.yml/badge.svg" /></a>
-  <img alt="Tests" src="https://img.shields.io/badge/tests-564_(Vitest_439_%C2%B7_PHPUnit_125)-2E7D32?style=flat-square" />
+  <img alt="Tests" src="https://img.shields.io/badge/tests-586_(Vitest_461_%C2%B7_PHPUnit_125)-2E7D32?style=flat-square" />
   <a href="https://shye-seo.github.io/sns-shortform-automation/"><img alt="Live demo" src="https://img.shields.io/badge/live_demo-browser_console-13315C?style=flat-square" /></a>
 </p>
 
@@ -12,7 +12,7 @@
 그것을 **수십 개 테넌트 · 수백 편 · 플랫폼 쿼터 안에서** 안정적으로 운영하는 것은
 완전히 다른 문제입니다. 이 저장소는 대규모 배포 환경의 안정성과 확장성 문제를 풉니다.
 
-`TypeScript` · `Node.js 20` · `ffmpeg` · `Vitest 439 tests` · `커버리지 86.0%`
+`TypeScript` · `Node.js 20` · `ffmpeg` · `Vitest 461 tests` · `커버리지 86.0%`
 `PHP 8.2` · `MySQL 8.0` · `Meta Graph API` · `NCP SENS 알림톡` · `PHPUnit 125 tests`
 
 | 계층 | 무엇을 보장하나 |
@@ -27,7 +27,7 @@
 | **서버 계층(DB·API)** | MySQL 8.0 기반 작업 원장 보존 및 PHP 백엔드 워커의 `SKIP LOCKED` 기반 동시성 경합 없는 작업 선점 |
 
 ```bash
-npm ci && npm run verify      # 439 tests, 네트워크·ffmpeg 없이
+npm ci && npm run verify      # 461 tests, 네트워크·ffmpeg 없이
 npm run cli -- studio         # 터미널 데모 콘솔
 npm run dev:web               # 브라우저 콘솔 → http://127.0.0.1:4173
 ```
@@ -282,6 +282,9 @@ YouTube 일일 쿼터는 자정까지 회복되지 않습니다. 하나로 합�
   `exhausts one tenant's quota without touching another` 테스트로 고정.
 - **차감은 all-or-nothing** — 버킷이 거절하면 쿼터도 차감되지 않습니다(거절된 호출이
   일일 예산을 먹는 버그 방지).
+- **예산이 없으면 실패가 아니라 대기** — 대기 작업을 다음 창으로 미루는 배치는 §19의
+  쿼터 계획기가 정합니다. 발행 어댑터는 "지금 보낼 수 있는가"만 답하고, "언제 보낼 것인가"는
+  계획이 답합니다.
 
 ---
 
@@ -562,6 +565,8 @@ npm run cli -- queue run --project .work/부산-신혼집-... --execute  # 실�
 npm run cli -- hooks --topic "주방 수납" --count 3
 npm run cli -- hooks --report .work/ab-samples.json --experiment exp-kitchen --metric retention
 npm run cli -- slots --count 6 --start 09:00 --end 23:00 --min-gap 90
+npm run cli -- quota plan --provider youtube --jobs 8 --slot-start 08:00 --slot-end 23:00 --min-gap 30
+npm run cli -- quota plan --provider meta --jobs 30 --json
 npm run cli -- studio --html .work/studio.html
 ```
 
@@ -587,7 +592,7 @@ npm run cli -- studio --html .work/studio.html
 ## 12. 검증
 
 ```bash
-npm run verify    # typecheck + lint + 439 tests (+ typecheck:web)
+npm run verify    # typecheck + lint + 461 tests (+ typecheck:web)
 npm run coverage  # 86.0% statements · 80.4% branches
 ```
 
@@ -607,6 +612,7 @@ npm run coverage  # 86.0% statements · 80.4% branches
 | 해시 원시함수 (SHA-1·SHA-256·HMAC 벡터 + `node:crypto` 대조) | `hash.test.ts` | 9 |
 | 웹 콘솔 모델 (타임라인·더킹·댓글 DM·쿼터·A/B) | `webModels.test.ts` | 13 |
 | 웹 콘솔 클릭 (jsdom: 패널 전환·댓글→DM→수령·쿼터 중단) | `webConsole.test.tsx` | 4 |
+| **쿼터 인지 발행 계획 (창 경계·예산 소진·우선순위·슬롯·최소 간격·지평 넘김)** | `quotaPlanner.test.ts` | **22** |
 
 네트워크·ffmpeg 없이 전부 통과합니다. 외부 API는 fake HTTP와 주입된 리프레셔로,
 재시도는 주입된 시계·sleep으로 검증합니다.
@@ -657,6 +663,7 @@ npm run coverage  # 86.0% statements · 80.4% branches
 - [x] Redis 큐 어댑터 (WATCH/MULTI/EXEC 원자적 선점 · 지연 승격 · lease 회수 · `QUEUE_DRIVER` 스위칭)
 - [x] 실시간 렌더링 큐 시계열 메트릭 차트 (처리량·실패율·플랫폼 토큰 추이, SVG/React 두 표현)
 - [x] 브라우저 데모 콘솔 — 9:16 스튜디오·댓글 DM·발행 쿼터·훅 A/B (GitHub Pages 정적 배포)
+- [x] 쿼터 인지 발행 계획 — 창 경계·우선순위·발행 슬롯·최소 간격을 함께 지키는 스케줄 계산 (§19)
 
 
 ---
@@ -684,7 +691,10 @@ platform built on a working 60-second shortform pipeline.
   exploration floor.
 - **Studio console** — one snapshot rendered as terminal text, a self-contained HTML page,
   Prometheus text, and a read-only JSON API.
-- **Verification** — 413 Vitest cases, 86.0% statement coverage, no network and no ffmpeg
+- **Quota planning** — pending jobs get concrete publish times under a fixed daily budget:
+  spillover moves to the next window instead of failing, slot windows and a minimum gap are
+  applied at the same time, and priority decides who keeps their preferred time.
+- **Verification** — 461 Vitest cases, 86.0% statement coverage, no network and no ffmpeg
   required (injected clock, RNG, sleep, HTTP and token refresher).
 
 ```bash
@@ -948,6 +958,72 @@ npm run typecheck:web # 타입 검사 (src + web, DOM lib 포함)
 - 훅 A/B의 노출·시청 수는 시뮬레이션입니다. 검정·신뢰구간·승자 판정은 실제 통계 모듈이 계산합니다.
 - 브라우저는 렌더하지 않습니다. 프리뷰는 타임라인·자막·더킹 값을 그리는 화면이고, 인코딩은
   워커의 ffmpeg가 `docs/demo.mp4`처럼 수행합니다.
+
+---
+
+## 19. 쿼터 인지 발행 계획 — 예산이 없으면 미루고, 실패시키지 않는다
+
+발행 어댑터는 "지금 보낼 수 있는가"에만 답합니다. 그런데 대행사는 하루에 한 편이 아니라
+열 편을 예약합니다. YouTube 업로드는 1편 1,600 unit, 하루 예산은 10,000 unit이므로 **6편까지가
+오늘 몫**이고 나머지는 리셋 이후입니다. 이 계산을 사람이 매일 아침 다시 하면, 그게 바로
+자동화가 덜 된 지점입니다.
+
+`src/lib/rateLimit/quotaPlanner.ts`는 대기 작업 목록과 플랫폼 예산을 받아 **각 작업이 실제로
+나갈 시각**을 냅니다. 작업은 실패하지 않습니다. 예산이 없으면 다음 창의 첫 슬롯으로 밀리고,
+그 사실이 `reason: 'quota-shifted'`로 남습니다.
+
+```bash
+npm run cli -- quota plan --provider youtube --jobs 8 --slot-start 08:00 --slot-end 23:00 --min-gap 30
+```
+
+```
+  job-1    2026-11-19T08:00:00Z   w0  slot-shifted  (+480분)
+  job-2    2026-11-19T08:30:00Z   w0  gap-shifted  (+510분)
+  ...
+  job-6    2026-11-19T10:30:00Z   w0  gap-shifted  (+630분)
+  job-7    2026-11-20T08:00:00Z   w1  quota-shifted  (+1920분)
+  job-8    2026-11-20T08:30:00Z   w1  quota-shifted  (+1950분)
+
+  창별 사용량
+  w0  2026-11-19T00:00:00Z ~ 2026-11-20T00:00:00Z    9600 / 10000  unit   6편   96%
+  w1  2026-11-20T00:00:00Z ~ 2026-11-21T00:00:00Z    3200 / 10000  unit   2편   32%
+
+  배치 8편 · 미배치 0편 · 사용 단위 12800 · 창 2개
+```
+
+(위 실행은 `--from 2026-11-19T00:00:00Z` 기준입니다. 슬롯 시작이 08:00이라 1편은 슬롯으로,
+나머지는 30분 간격으로 밀리고, 7편째부터는 다음 창으로 넘어갑니다.)
+
+### 19.1 세 제약을 한 번에
+
+| 제약 | 무엇을 막나 | 계획에서의 처리 |
+|------|-------------|-----------------|
+| **쿼터 창** | 하루 예산 초과 | 창을 고정 길이로 두고, 첫 창은 이미 쓴 양만큼 줄여 시작 |
+| **발행 슬롯** | 새벽 3시 발행 같은 사고 | 슬롯 밖 시각은 다음 슬롯 opening으로 이동 (`slot-shifted`) |
+| **최소 간격** | 같은 창에서 두 편이 붙어 알고리즘 피드백을 오염 | `minGapMs` 안에 겹치면 뒤로 밀기 (`gap-shifted`) |
+
+우선순위가 높은 작업이 먼저 자리를 잡고, 같은 우선순위면 희망 시각이 이른 순서, 그것도 같으면
+작전 id 순서입니다. 같은 입력이면 항상 같은 계획이 나오므로(순수 함수) 결과를 테스트로 고정합니다.
+
+### 19.2 테넌트의 현재 소비 상태에서 시작
+
+`planFromLimitDecision`은 `LimitDecision`(남은 예산 + 리셋까지 남은 시간)에서,
+`planFromTenantView`는 콘솔 스냅숏에서 바로 계획을 세웁니다. "지금 8,400을 썼고 3시간 뒤
+리셋"이라는 상태가 그대로 첫 창(`capacity 1,600`, 3시간짜리)이 되고, 그다음부터 24시간 창이
+이어집니다.
+
+### 19.3 검증
+
+| 구분 | 내용 |
+|------|------|
+| 예산 | YouTube 6편/창, 7편째 다음 창 / Meta 25편/창, 30편 → 25+5 / 이미 8,400 사용 시 1편 |
+| 제약 | 슬롯 밖 이동(같은 날·다음 날·자정 넘는 슬롯), 최소 간격, `notBefore` 승인 대기 |
+| 순서 | 우선순위 → 희망 시각 → id, 입력 순서가 달라도 동일 결과 |
+| 경계 | 계획 지평(창 수) 초과 시 `earliestAtMs: null`, 작업 0건, 잘못된 예산·중복 id는 오류 |
+
+**한계**: 리셋 시각은 플랫폼 정책에서 오는 값이라 호출자가 넘깁니다(YouTube는 태평양 자정).
+실제 발행 시점의 플랫폼 카운터가 계획과 어긋나면, 어댑터의 429/`quotaExceeded` 응답이 정답이고
+계획은 다음 실행에서 그 값으로 다시 세워집니다.
 
 ---
 

@@ -28,6 +28,7 @@ import { generateHookVariants } from './lib/telemetry/hooks';
 import { TelemetryIngestor } from './lib/telemetry/metrics';
 import { evaluateExperiment } from './lib/telemetry/significance';
 import { planPublishSlots, gapStatistics } from './lib/rateLimit/jitter';
+import { planFromTenantView, summarizePlan } from './lib/rateLimit/quotaPlanner';
 import { TenantRegistry } from './lib/rateLimit/tenantRegistry';
 import type { HookAngle } from './types/telemetry';
 import { StudioConsole } from './services/studio/console';
@@ -501,6 +502,92 @@ program
         process.stdout.write(`${scene.startSec.toFixed(1).padStart(5)}s [${scene.beat}] ${scene.narration}\n`);
       }
       process.stdout.write(`\n${script.caption}\n\n`);
+    } catch (error) {
+      fail(error);
+    }
+  });
+
+/* ── quota ─────────────────────────────────────────────────────────────── */
+
+const quotaCommand = program.command('quota').description('플랫폼 쿼터 계산 (예산 안에서 발행 시각 배치)');
+
+quotaCommand
+  .command('plan')
+  .description('대기 작업을 플랫폼 일일 한도 안에 배치하고, 넘치는 작업은 다음 리셋으로 미룬다')
+  .option('--provider <provider>', 'meta | youtube', 'youtube')
+  .option('--tenant <id>', '테넌트 ID', 'studio-demo')
+  .option('--jobs <n>', '대기 작업 수', '8')
+  .option('--from <iso>', '지금 시각(ISO8601). 기본은 현재 시각')
+  .option('--slot-start <HH:MM>', '발행 슬롯 시작(UTC 기준)')
+  .option('--slot-end <HH:MM>', '발행 슬롯 끝(UTC 기준)')
+  .option('--min-gap <min>', '두 발행 사이 최소 간격(분)', '0')
+  .option('--json', 'JSON으로 출력')
+  .action((options) => {
+    try {
+      const provider = String(options.provider) as 'meta' | 'youtube';
+      if (provider !== 'meta' && provider !== 'youtube') {
+        throw new ShortformError('--provider 는 meta 또는 youtube 입니다', { code: 'VALIDATION' });
+      }
+      const nowMs = options.from ? Date.parse(String(options.from)) : Date.now();
+      if (!Number.isFinite(nowMs)) {
+        throw new ShortformError('--from 은 ISO8601 시각이어야 합니다', { code: 'VALIDATION', details: { from: options.from } });
+      }
+      const jobCount = Math.max(0, Number(options.jobs));
+      if (!Number.isFinite(jobCount)) {
+        throw new ShortformError('--jobs 는 숫자입니다', { code: 'VALIDATION' });
+      }
+
+      const registry = new TenantRegistry({ now: () => nowMs });
+      registry.register({ id: String(options.tenant), name: '쿼터 계획 데모', plan: 'agency' });
+      const view = registry.snapshot().find((entry) => entry.tenantId === String(options.tenant));
+      if (!view) throw new ShortformError('테넌트를 찾을 수 없습니다', { code: 'CONFIG' });
+
+      const toMinute = (value: unknown): number | undefined => {
+        if (!value) return undefined;
+        const match = /^(\d{1,2}):(\d{2})$/.exec(String(value));
+        if (!match) throw new ShortformError(`시각은 HH:MM 입니다: ${String(value)}`, { code: 'VALIDATION' });
+        return Number(match[1]) * 60 + Number(match[2]);
+      };
+      const startMinute = toMinute(options.slotStart);
+      const endMinute = toMinute(options.slotEnd);
+      const minGapMs = Math.max(0, Number(options.minGap)) * 60_000;
+
+      const jobs = Array.from({ length: jobCount }, (_, index) => ({ id: `job-${index + 1}` }));
+      const plan = planFromTenantView(view, provider, jobs, {
+        nowMs,
+        unitCost: provider === 'youtube' ? 1_600 : 1,
+        slot: startMinute === undefined && endMinute === undefined ? { minGapMs } : { startMinute, endMinute, minGapMs },
+      });
+      const summary = summarizePlan(plan);
+
+      if (options.json) {
+        printJson({ plan, summary });
+        return;
+      }
+
+      const iso = (ts: number): string => new Date(ts).toISOString().replace('.000Z', 'Z');
+      process.stdout.write(`\n${provider} 쿼터 계획 · 테넌트 ${options.tenant} · 지금 ${iso(nowMs)}\n\n`);
+      for (const assignment of plan.assignments) {
+        const shift = assignment.delayMs === 0 ? '' : `  (+${Math.round(assignment.delayMs / 60_000)}분)`;
+        process.stdout.write(
+          `  ${assignment.jobId.padEnd(8)} ${iso(assignment.publishAtMs).padEnd(22)} w${assignment.windowIndex}  ${assignment.reason}${shift}\n`,
+        );
+      }
+      for (const entry of plan.deferred) {
+        process.stdout.write(
+          `  ${entry.jobId.padEnd(8)} 미배치 (${entry.reason}) ${entry.earliestAtMs ? iso(entry.earliestAtMs) : '계획 지평 밖'}\n`,
+        );
+      }
+      process.stdout.write('\n  창별 사용량\n');
+      for (const window of plan.windows.filter((entry) => entry.jobs > 0)) {
+        const share = Math.round((window.plannedUnits / window.capacityUnits) * 100);
+        process.stdout.write(
+          `  w${window.index}  ${iso(window.startMs)} ~ ${iso(window.endMs)}  ${String(window.plannedUnits).padStart(6)} / ${String(window.capacityUnits).padEnd(6)} unit  ${String(window.jobs).padStart(2)}편  ${String(share).padStart(3)}%\n`,
+        );
+      }
+      process.stdout.write(
+        `\n  배치 ${summary.planned}편 · 미배치 ${summary.deferred}편 · 사용 단위 ${summary.totalUnits} · 창 ${summary.usedWindows}개\n\n`,
+      );
     } catch (error) {
       fail(error);
     }
