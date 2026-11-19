@@ -119,6 +119,21 @@ describe('regeneration variety', () => {
     expect(recipeText).not.toMatch(/자격 조건을 한 줄로/);
   });
 
+  it('survives the one-character and empty states a topic field passes through', () => {
+    for (const topic of ['', ' ', '겨', '1', '겨울']) {
+      const model = buildStudioModel({
+        topic,
+        durationSec: 45,
+        speed: 1,
+        language: 'ko',
+        drafts: draftBeatScene(topic, 45, 0),
+        compress: true,
+      });
+      expect(model.scenes.length).toBeGreaterThanOrEqual(4);
+      expect(model.totalDurationSec).toBeGreaterThan(0);
+    }
+  });
+
   it('keeps the hook inside the 3.5s ceiling after compression', () => {
     for (const topic of [JEJU, MASSAGER, CHEONGYAK, DINNER]) {
       const model = buildStudioModel({

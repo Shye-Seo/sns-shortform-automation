@@ -79,7 +79,11 @@ export function makeRequest(
   angle: AngleChoice = 'auto',
   variation = 0,
 ): ScriptRequest {
-  const safeTopic = topic.trim() === '' ? '오늘의 주제 정리' : topic;
+  // ScriptRequestSchema requires 2+ characters. A one-character topic happens
+  // on the first keystroke of the topic field, and letting it throw blanks the
+  // whole console, so pad it instead of rejecting it.
+  const raw = topic.trim();
+  const safeTopic = raw.length >= 2 ? topic : raw.length === 1 ? `${raw} 주제` : '오늘의 주제 정리';
   const resolved = resolveAngle(angle, safeTopic, variation);
   return ScriptRequestSchema.parse({
     topic: safeTopic,
