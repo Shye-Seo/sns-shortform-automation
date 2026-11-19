@@ -11,7 +11,7 @@
  * worker runs for everything the console actually calls.
  */
 import { build } from 'esbuild';
-import { copyFile, mkdir, rm, writeFile } from 'node:fs/promises';
+import { copyFile, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -54,10 +54,18 @@ const result = await build({
 });
 
 await copyFile(resolve(here, 'styles.css'), resolve(appDir, 'app.css'));
-await copyFile(resolve(here, 'index.html'), resolve(outDir, 'index.html'));
-await writeFile(resolve(outDir, '.nojekyll'), '');
 
 const bytes = Object.values(result.metafile.outputs)[0]?.bytes ?? 0;
+
+// GitHub Pages sends `cache-control: max-age=600` for the bundle, so a deploy
+// can sit behind an old app.js in a visitor's browser. Stamp the asset URLs with
+// a value that changes on every build; the HTML is cheap to revalidate and the
+// stamped bundle is a new cache key.
+const stamp = (await import('node:crypto')).createHash('sha1').update(`${Date.now()}:${bytes}`).digest('hex').slice(0, 8);
+const html = await readFile(resolve(here, 'index.html'), 'utf8');
+await writeFile(resolve(outDir, 'index.html'), html.replaceAll('__BUILD__', stamp));
+await writeFile(resolve(outDir, '.nojekyll'), '');
+
 await writeFile(
   resolve(appDir, 'build.json'),
   `${JSON.stringify({ builtAt: new Date().toISOString(), bundleBytes: bytes }, null, 2)}\n`,
