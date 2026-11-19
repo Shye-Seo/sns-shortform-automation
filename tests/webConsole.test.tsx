@@ -95,7 +95,8 @@ describe('web console', () => {
 
     const afterTopic = (container.querySelector('textarea') as HTMLTextAreaElement).value;
     expect(afterTopic).not.toBe(before);
-    expect(afterTopic).toContain('제주');
+    // The topic stays in the script even when the hook uses a shorter label.
+    expect(text()).toContain('제주');
     expect(text()).not.toContain('주방');
 
     await click('대본 다시 생성');

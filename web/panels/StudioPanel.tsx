@@ -355,7 +355,7 @@ export function StudioPanel(props: StudioPanelProps) {
                   </div>
                   <textarea
                     rows={2}
-                    value={draft.narration}
+                    value={item.narration}
                     onChange={(event) => updateScene(index, event.target.value)}
                     style={{ borderColor: over ? 'var(--bad)' : undefined }}
                   />

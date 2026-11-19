@@ -1,4 +1,5 @@
 import { stableHash } from '../lib/ids';
+import { estimateSpeechSeconds } from '../lib/text';
 import type { AngleId, AngleChoice, Angle, TopicCategory, TopicProfile } from '../types/plan';
 import type { CtaGoal, HookType } from '../types/script';
 import type { SceneDraft } from './scriptEngine';
@@ -43,16 +44,19 @@ const CATEGORY_VISUAL: Record<TopicCategory, string[]> = {
   daily: ['핸드헬드 일상 컷', '손이 먼저 움직이는 장면', '하루 순서 타임랩스', '메모 적는 손'],
 };
 
+/**
+ * Hook candidates per angle, ordered long → short. A long topic plus a long
+ * predicate overruns the 3.5s hook ceiling and the fitter then trims words until
+ * the sentence loses its verb ("팔꿈치 마사지기," alone). So the writer measures
+ * every candidate and uses the first one that fits, rotating among the fitting
+ * ones for variety. The compact forms at the end are real hooks, not leftovers.
+ */
 const HOOK_TEMPLATES: Record<AngleId, string[]> = {
-  'problem-solve': [
-    '{s}, {d}부터 바꾸면 달라집니다',
-    '{s}, 왜 매번 {d}에서 막힐까요?',
-    '{s}, 결론부터 말하면 {d}입니다',
-  ],
-  numbers: ['{s}, 딱 3가지만 기억하세요', '{s}, 10명 중 9명이 놓치는 {d}', '{s}, 3분이면 정리됩니다'],
-  checklist: ['{s} 체크리스트, 순서대로만 하세요', '{s} 하기 전에 꼭 확인할 4가지', '{s}, 이 순서 아니면 다시 합니다'],
-  'before-after': ['{s}, 하기 전과 후가 이렇게 다릅니다', '{s} 하고 나서 제일 달라진 것', '{s}, 3주 뒤 이렇게 됩니다'],
-  contrarian: ['{s}, {b}{bi} 답이 아닙니다', '{s}, {b}부터 버리세요', '{b}{bi} {s}에서는 안 통합니다'],
+  'problem-solve': ['{h}, {d}부터 보세요', '{h}, 왜 {d}에서 막힐까요?', '{h}, 답은 {d}', '{d}에서 막히나요?'],
+  numbers: ['{h}, 3가지만 기억하세요', '{h}, 3분이면 됩니다', '9명이 놓치는 {d}'],
+  checklist: ['{h}, 이 순서만 지키세요', '{h}, 확인할 4가지', '{h}, 순서 틀리면 다시', '확인할 4가지'],
+  'before-after': ['{h}, 전후가 다릅니다', '{h}, 3주 뒤 달라집니다', '전후가 다릅니다'],
+  contrarian: ['{h}, {b}부터 버리세요', '{b}부터 버리세요', '{h}, {b}{bi} 답이 아닙니다', '{b}{bi} 안 통합니다'],
 };
 
 /**
@@ -87,6 +91,38 @@ function hashOf(text: string): number {
   return parseInt(stableHash(text), 16);
 }
 
+// The fitter's hook cap is 3.25s at 45s; leave a margin so a borderline line
+// is not clause-trimmed down to its subject after the fact.
+const HOOK_BUDGET_SEC = 3.0;
+
+function hookSubjectFor(profile: TopicProfile): string {
+  const subject = profile.subject.trim();
+  if (subject.length <= 8) return subject;
+  const tail = subject.split(' ').slice(-2).join(' ');
+  return tail.length <= 10 ? tail : profile.core;
+}
+
+function chooseHook(
+  angle: AngleId,
+  profile: TopicProfile,
+  belief: string,
+  hookSubject: string,
+  variation: number,
+): string {
+  const filled = HOOK_TEMPLATES[angle].map((template) => fill(template, profile, belief, hookSubject));
+  const fits = (line: string): boolean =>
+    estimateSpeechSeconds(line, { language: 'ko', speed: 1 }) <= HOOK_BUDGET_SEC;
+  const topical = filled.filter(
+    (line) => line.includes(hookSubject) || line.includes(profile.detail) || line.includes(profile.core),
+  );
+  // Prefer a hook that names the topic; subject-free forms exist only as a last
+  // resort for very long topics where nothing topical fits in 3 seconds.
+  const pool = topical.filter(fits);
+  const fallback = filled.filter(fits);
+  const chosen = pool.length > 0 ? pool : fallback.length > 0 ? fallback : [filled.reduce((a, b) => (a.length <= b.length ? a : b))];
+  return pickAt(chosen, variation);
+}
+
 export function resolveAngle(choice: AngleChoice | undefined, topic: string, variation: number): Angle {
   if (choice && choice !== 'auto') return ANGLE_BY_ID[choice];
   const index = (hashOf(topic) + Math.max(0, variation)) % ANGLE_LIST.length;
@@ -109,8 +145,9 @@ function hasBatchim(word: string): boolean {
   return (code - 0xac00) % 28 !== 0;
 }
 
-function fill(template: string, profile: TopicProfile, belief: string): string {
+function fill(template: string, profile: TopicProfile, belief: string, hookSubject = profile.subject): string {
   return template
+    .replace(/\{h\}/g, hookSubject)
     .replace(/\{s\}/g, profile.subject)
     .replace(/\{d\}/g, profile.detail)
     .replace(/\{b\}/g, belief)
@@ -170,8 +207,16 @@ export function writeTopicDrafts(input: TopicDraftInput): TopicDraftResult {
 
   // Angle rotates every five presses; the phrasing inside the angle rotates on
   // every press, so consecutive presses never repeat the hook.
-  const hook = pickAt(HOOK_TEMPLATES[angle.id], hash + Math.floor(variation / 5));
-  const problem = pickAt(bank.problems, hash + variation);
+  // Hooks use a shorter subject so the line stays inside the 3.5s ceiling while
+  // still naming the topic: "부산 신혼집 3평 주방 수납" → "주방 수납".
+  const hook = chooseHook(angle.id, profile, belief, hookSubjectFor(profile), variation);
+  // Keep the topic in the body too: prefer a problem line that names it, so a
+  // shortened hook never leaves the script without the subject.
+  const problemLines = bank.problems.map((line) => fill(line, profile, belief, hookSubjectFor(profile)));
+  const topicalProblems = problemLines.filter(
+    (line) => line.includes(profile.core) || line.includes(profile.subject),
+  );
+  const problem = pickAt(topicalProblems.length > 0 ? topicalProblems : problemLines, hash + variation);
   // Fill the chosen length with steps instead of leaving a third of the
   // timeline empty: 30s → 2 steps, 45s → 4, 60s → 4 (bank size ceiling).
   const stepCount = Math.min(4, Math.max(2, Math.round((durationSec - 15) / 7.5)));
@@ -186,7 +231,10 @@ export function writeTopicDrafts(input: TopicDraftInput): TopicDraftResult {
   const drafts: SceneDraft[] = [
     {
       beat: 'hook',
-      narration: `${fill(hook, profile, belief)}.`,
+      narration: (() => {
+        const line = fill(hook, profile, belief, hookSubjectFor(profile));
+        return /[.?!]$/.test(line) ? line : `${line}.`;
+      })(),
       onScreenText: fill(pickAt(screens.hook, angleIndex + hash + variation), profile, belief),
       emphasis: [profile.core],
       visual: visual[0],
