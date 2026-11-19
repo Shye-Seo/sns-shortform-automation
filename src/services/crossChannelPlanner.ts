@@ -46,6 +46,10 @@ function hashOf(text: string): number {
   return parseInt(stableHash(text), 16);
 }
 
+function fillSubject(text: string, profile: TopicProfile): string {
+  return text.replace(/\{s\}/g, profile.subject);
+}
+
 function firstClause(text: string, max = 28): string {
   const sentence = text.split(/(?<=[.!?])\s/)[0] ?? text;
   const clean = sentence.replace(/[.!?]$/, '').trim();
@@ -128,7 +132,7 @@ export function buildBlog(
 
   const titlePool = [
     `${profile.subject} ${profile.detail} 정리${profile.season ? ` (${seasonLabel(profile.season)})` : ''}`,
-    `${profile.subject}, ${steps.length + 2}가지만 지키면 됩니다`,
+    `${profile.subject}, ${steps.length}단계만 지키면 됩니다`,
     `${profile.subject} ${keywordSuffix} — ${profile.detail}부터 확인하세요`,
     `[${profile.categoryLabel}] ${profile.subject} 순서대로 정리`,
     `${profile.subject} 해보고 남은 것만 (${profile.detail} 체크)`,
@@ -140,7 +144,7 @@ export function buildBlog(
   const intro = [
     `${hook}`,
     `${problem}`,
-    `${profile.subject}는 ${profile.detail}만 잡으면 나머지가 따라옵니다. 제가 실제로 쓰는 순서를 ${steps.length}단계로 정리했습니다.`,
+    `핵심은 ${profile.detail}입니다. 실제로 쓰는 순서를 ${steps.length}단계로 정리했습니다.`,
   ].join(' ');
 
   const outline = [
@@ -154,7 +158,10 @@ export function buildBlog(
     })),
     {
       heading: `${profile.subject}에서 자주 하는 실수`,
-      points: [bank.problems[(hashOf(profile.topic) + variation + 1) % bank.problems.length] as string, '되돌리기 어려운 결정은 마지막에 합니다.'],
+      points: [
+        fillSubject(bank.problems[(hashOf(profile.topic) + variation + 1) % bank.problems.length] as string, profile),
+        '되돌리기 어려운 결정은 마지막에 합니다.',
+      ],
     },
   ];
 

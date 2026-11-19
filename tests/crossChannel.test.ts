@@ -171,6 +171,15 @@ describe('cross-channel plan', () => {
     expect(plan.longform.estimatedMinutes).toBeGreaterThan(2);
   });
 
+  it('never leaks a template placeholder into the plan', () => {
+    const plan = planCrossChannel({ topic: JEJU, variation: 3 });
+    const text = JSON.stringify(plan);
+    expect(text).not.toContain('{s}');
+    expect(text).not.toContain('{detail}');
+    expect(text).not.toContain('{badge}');
+    expect(text).not.toContain('{b}');
+  });
+
   it('switches the blog skeleton to the chosen platform', () => {
     const naver = planCrossChannel({ topic: JEJU, blogPlatform: 'naver-blog' });
     const wordpress = planCrossChannel({ topic: JEJU, blogPlatform: 'wordpress' });
