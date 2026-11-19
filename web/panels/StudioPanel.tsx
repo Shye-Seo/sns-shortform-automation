@@ -8,6 +8,7 @@ import { CANVAS } from '../../src/types/render';
 import type { Language } from '../../src/types/script';
 import type { AngleChoice } from '../../src/types/plan';
 import { ANGLE_LIST } from '../../src/services/patternLibrary';
+import { resolveAngle } from '../../src/services/topicDraftWriter';
 import { Button, Card, Kpi, Pill, Toggle, clock, pct, sec } from '../ui';
 import { BEAT_HINT, BEAT_LABEL, buildStudioModel, cueAt, gainAt, sceneAt, type StudioModel } from '../model/studio';
 
@@ -53,7 +54,8 @@ export function StudioPanel(props: StudioPanelProps) {
     onRegenerate,
     onOpenPlan,
   } = props;
-  const activeAngle = ANGLE_LIST.find((item) => item.id === angle);
+  const resolvedAngle = resolveAngle(angle, topic, variation);
+  const activeAngleLabel = ANGLE_LIST.find((item) => item.id === resolvedAngle.id)?.label ?? resolvedAngle.label;
   const [safeArea, setSafeArea] = useState(true);
   const [playing, setPlaying] = useState(false);
   const [t, setT] = useState(0);
@@ -257,9 +259,9 @@ export function StudioPanel(props: StudioPanelProps) {
           }
         >
           <div className="row" style={{ marginBottom: 8, alignItems: 'center' }}>
-            <Pill tone="ok">{activeAngle ? activeAngle.label : '앵글 자동'}</Pill>
+            <Pill tone="ok">{activeAngleLabel}</Pill>
             <span className="small muted">
-              {activeAngle ? activeAngle.hookStyle : '주제에 맞는 앵글을 엔진이 고릅니다'} · 변주 {variation + 1}
+              {angle === 'auto' ? '자동 선택' : '직접 선택'} · {resolvedAngle.hookStyle} · 변주 {variation + 1}
             </span>
             <Pill tone="ghost">{model.badgeText}</Pill>
           </div>

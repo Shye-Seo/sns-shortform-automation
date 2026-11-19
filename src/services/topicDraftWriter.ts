@@ -55,19 +55,16 @@ const HOOK_TEMPLATES: Record<AngleId, string[]> = {
   contrarian: ['{s}, {b}{bi} 답이 아닙니다', '{s}, {b}부터 버리세요', '{b}{bi} {s}에서는 안 통합니다'],
 };
 
+/**
+ * CTAs stay short on purpose: the CTA scene is never compressed (it is the one
+ * beat the fitter must not shorten), so a long subject inside it pushes the
+ * whole timeline over budget. The topic already lives in the hook and steps.
+ */
 const CTA_TEMPLATES: Record<CtaGoal, string[]> = {
-  save: ['{s} 다시 볼 때를 위해 저장해두세요.', '지금 저장해두면 다음에 안 헤맵니다.', '순서 그대로 저장해두세요.'],
-  comment: ['{s}, 어디서 막히는지 댓글로 알려주세요.', '이 방법 써봤으면 댓글에 남겨주세요.'],
-  follow: ['{s} 시리즈 계속 올립니다. 팔로우해두세요.', '다음 편은 {s} 마무리입니다.'],
-  link: ['자세한 순서는 프로필 링크의 {s} 정리에 있습니다.', '체크리스트는 프로필 링크에서 받아가세요.'],
-};
-
-const ANGLE_CTA_EXTRA: Record<AngleId, string> = {
-  'problem-solve': '막히는 지점부터 다시 보세요.',
-  numbers: '숫자만 바꿔서 한 번 더 해보세요.',
-  checklist: '체크리스트처럼 하나씩 확인하세요.',
-  'before-after': '전후 사진을 나란히 놓고 보세요.',
-  contrarian: '반대라고 생각하면 댓글로 알려주세요.',
+  save: ['다시 볼 때를 위해 저장해두세요.', '지금 저장해두면 다음에 안 헤맵니다.', '순서 그대로 저장해두세요.'],
+  comment: ['어디서 막히는지 댓글로 알려주세요.', '써봤으면 댓글에 남겨주세요.'],
+  follow: ['시리즈 계속 올립니다. 팔로우해두세요.', '다음 편에서 마무리합니다.'],
+  link: ['자세한 순서는 프로필 링크에 있습니다.', '체크리스트는 프로필 링크에서 받아가세요.'],
 };
 
 /** CLI --hook values map onto the same five angles the console cycles. */
@@ -178,7 +175,7 @@ export function writeTopicDrafts(input: TopicDraftInput): TopicDraftResult {
   const stepCount = Math.min(4, Math.max(2, Math.round(durationSec / 16)));
   const start = variation % Math.max(1, bank.steps.length - stepCount + 1);
   const steps = bank.steps.slice(start, start + stepCount);
-  const cta = variantCta(ctaGoal, angle.id, profile, variation);
+  const cta = pickAt(CTA_TEMPLATES[ctaGoal], hash + variation);
 
   const visual = CATEGORY_VISUAL[profile.category];
   const screens = bank.screens;
@@ -232,12 +229,6 @@ export function writeTopicDrafts(input: TopicDraftInput): TopicDraftResult {
   ).slice(0, 8);
 
   return { profile, angle, variation, drafts, hook: hookLine, cta, caption, hashtags };
-}
-
-function variantCta(goal: CtaGoal, angle: AngleId, profile: TopicProfile, variation: number): string {
-  const base = pickAt(CTA_TEMPLATES[goal], variation).replace(/\{s\}/g, profile.subject);
-  const extra = ANGLE_CTA_EXTRA[angle];
-  return variation % 2 === 0 ? `${base} ${extra}` : base;
 }
 
 /** Human label for the console: "숫자비교형 · 변주 4". */
