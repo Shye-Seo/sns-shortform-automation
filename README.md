@@ -599,7 +599,7 @@ npm run cli -- crosschannel --topic "냉장고 재료로 10분 저녁" --llm --o
 ## 12. 검증
 
 ```bash
-npm run verify    # typecheck + typecheck:web + lint + 483 tests
+npm run verify    # typecheck + typecheck:web + lint + 485 tests
 npm run coverage  # 86.0% statements · 80.4% branches
 ```
 
