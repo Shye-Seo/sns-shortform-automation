@@ -1,6 +1,6 @@
 <p align="center">
   <a href="https://github.com/Shye-Seo/sns-shortform-automation/actions/workflows/ci.yml"><img alt="CI Pipeline" src="https://github.com/Shye-Seo/sns-shortform-automation/actions/workflows/ci.yml/badge.svg" /></a>
-  <img alt="Tests" src="https://img.shields.io/badge/tests-610_(Vitest_485_%C2%B7_PHPUnit_125)-2E7D32?style=flat-square" />
+  <img alt="Tests" src="https://img.shields.io/badge/tests-633_(Vitest_508_%C2%B7_PHPUnit_125)-2E7D32?style=flat-square" />
   <img alt="Web demo" src="https://img.shields.io/badge/web_demo-in_docs/(Pages_setup_needed)-13315C?style=flat-square" />
 </p>
 
@@ -12,7 +12,7 @@
 그것을 **수십 개 테넌트 · 수백 편 · 플랫폼 쿼터 안에서** 안정적으로 운영하는 것은
 완전히 다른 문제입니다. 이 저장소는 대규모 배포 환경의 안정성과 확장성 문제를 풉니다.
 
-`TypeScript` · `Node.js 20` · `ffmpeg` · `Vitest 485 tests` · `커버리지 88.3%`
+`TypeScript` · `Node.js 20` · `ffmpeg` · `Vitest 508 tests` · `커버리지 88.7%`
 `PHP 8.2` · `MySQL 8.0` · `Meta Graph API` · `NCP SENS 알림톡` · `PHPUnit 125 tests`
 
 | 계층 | 무엇을 보장하나 |
@@ -27,7 +27,7 @@
 | **서버 계층(DB·API)** | MySQL 8.0 기반 작업 원장 보존 및 PHP 백엔드 워커의 `SKIP LOCKED` 기반 동시성 경합 없는 작업 선점 |
 
 ```bash
-npm ci && npm run verify      # 485 tests, 네트워크·ffmpeg 없이
+npm ci && npm run verify      # 508 tests, 네트워크·ffmpeg 없이
 npm run cli -- studio         # 터미널 데모 콘솔
 npm run dev:web               # 브라우저 콘솔 → http://127.0.0.1:4173
 ```
@@ -599,8 +599,8 @@ npm run cli -- crosschannel --topic "냉장고 재료로 10분 저녁" --llm --o
 ## 12. 검증
 
 ```bash
-npm run verify    # typecheck + typecheck:web + lint + 485 tests
-npm run coverage  # 88.3% statements · 81.4% branches
+npm run verify    # typecheck + typecheck:web + lint + 508 tests
+npm run coverage  # 88.7% statements · 81.4% branches
 ```
 
 | 영역 | 파일 | 건수 |
@@ -618,7 +618,9 @@ npm run coverage  # 88.3% statements · 81.4% branches
 | 기존 파이프라인 (대본·자막·더킹·렌더·게시) | 8개 파일 | 147 |
 | 해시 원시함수 (SHA-1·SHA-256·HMAC 벡터 + `node:crypto` 대조) | `hash.test.ts` | 9 |
 | 웹 콘솔 모델 (타임라인·더킹·댓글 DM·쿼터·A/B) | `webModels.test.ts` | 13 |
-| 웹 콘솔 클릭 (jsdom: 패널 전환·댓글→DM→수령·쿼터 중단) | `webConsole.test.tsx` | 4 |
+| 웹 콘솔 클릭 (jsdom: 패널 전환·댓글→DM→수령·쿼터 중단·OSMU 탭·훅 패턴 표) | `webConsole.test.tsx` | 6 |
+| **OSMU 변환 (대본→3포맷·글자 상한·해시태그 규칙·스레드 분할·훅 경고)** | `osmu.test.ts` | **12** |
+| **훅 패턴 비교 (기준선·카테고리 배수·훅 길이 감점·리더 판정)** | `hookPatternSim.test.ts` | **9** |
 | **쿼터 인지 발행 계획 (창 경계·예산 소진·우선순위·슬롯·최소 간격·지평 넘김)** | `quotaPlanner.test.ts` | **22** |
 
 네트워크·ffmpeg 없이 전부 통과합니다. 외부 API는 fake HTTP와 주입된 리프레셔로,
@@ -701,7 +703,7 @@ platform built on a working 60-second shortform pipeline.
 - **Quota planning** — pending jobs get concrete publish times under a fixed daily budget:
   spillover moves to the next window instead of failing, slot windows and a minimum gap are
   applied at the same time, and priority decides who keeps their preferred time.
-- **Verification** — 485 Vitest cases, 88.3% statement coverage, no network and no ffmpeg
+- **Verification** — 508 Vitest cases, 88.7% statement coverage, no network and no ffmpeg
   required (injected clock, RNG, sleep, HTTP and token refresher).
 
 ```bash
@@ -901,7 +903,7 @@ npx tsx -e "...simulateCommentStorm({ comments: 1000, concurrency: 256, clickRat
 
 ---
 
-## 18. 웹 데모 콘솔 — 주제연동 스튜디오 · 크로스채널 기획 · 댓글 DM · 발행 쿼터 · 훅 A/B
+## 18. 웹 데모 콘솔 — 주제연동 스튜디오 · 크로스채널 기획 · OSMU 변환 · 댓글 DM · 발행 쿼터 · 훅 A/B
 
 **데모**: <https://shye-seo.github.io/sns-shortform-automation/>
 
@@ -916,7 +918,8 @@ npx tsx -e "...simulateCommentStorm({ comments: 1000, concurrency: 256, clickRat
 | **크로스채널 기획** | 주제 하나로 릴스/쇼츠 대본 + 유튜브 롱폼 목차 + 네이버·티스토리·워드프레스 글 뼈대를 같은 단계 순서로 생성. 레퍼런스 글을 붙이면 훅 유형·단계 수·저장 유도를 읽어 앵글과 목차에 반영하고, 숏폼→챕터→H2 리퍼포징 맵을 표로 보여줌 | `topicProfile`, `patternLibrary`(6개 채널 구조), `contentAnalyzer`, `crossChannelPlanner`, `planMarkdown` |
 | **댓글 → DM 쿠폰** | 테스트 댓글 입력 → HMAC 서명 검증 → 큐 적재 → 어뷰징 차단 → 5초 안에 1회용 링크 발급 → 수령(1회) → 퍼널·ROAS | `core/interactiveCouponDispatcher` 전체 (워커 일시정지로 SLA 초과도 재현) |
 | **발행 캘린더 · 쿼터** | 지터가 들어간 예약 타임라인, Meta 25건/24h·YouTube 10,000 unit(업로드 1,600) 게이지, 한도 소진 시 발행 중단, DLQ 원클릭 재시도와 운영자 기록 | `rateLimit/jitter.planPublishSlots`, `rateLimit/tenantRegistry`, `queue/jobQueue`, `studio/dlqActions` |
-| **훅 A/B** | 같은 영상의 A/B 훅을 노출·3초 유지·완시·댓글·쿠폰 전환으로 비교, 표본 부족 시 판정 보류, 승자 채택 시 스튜디오 대본에 반영 | `telemetry/hooks.generateHookVariants`, `telemetry/significance`(`evaluateExperiment`·`twoProportionZTest`·`wilsonInterval`·`requiredSampleSize`) |
+| **OSMU 변환** | 스튜디오의 4비트 대본을 릴스 캡션·쇼츠 설명(비트 타임라인 포함)·블로그/스레드 요약으로 동시 변환. 글자 상한과 작성 규칙을 체크로 표시하고, 스레드는 500자 단위로 분할해 각각 복사 | `osmuConverter`(`buildBeatTimeline`·`buildHashtags`·`splitForThreads`), `scriptEngine` 대본, `topicProfile`, `topicBanks` |
+| **훅 A/B** | 같은 영상의 A/B 훅을 노출·3초 유지·완시·댓글·쿠폰 전환으로 비교, 표본 부족 시 판정 보류, 승자 채택 시 스튜디오 대본에 반영. 같은 주제의 훅 4유형(질문·숫자·반전·체크리스트) 예상 저장·공유 전환도 함께 비교 | `telemetry/hooks.generateHookVariants`, `telemetry/significance`(`evaluateExperiment`·`twoProportionZTest`·`wilsonInterval`·`requiredSampleSize`), `hookPatternSim` |
 
 <table>
   <tr>
@@ -925,7 +928,10 @@ npx tsx -e "...simulateCommentStorm({ comments: 1000, concurrency: 256, clickRat
   </tr>
   <tr>
     <td><img src="docs/preview/web-console-calendar.png" alt="발행 캘린더와 API 쿼터" /></td>
-    <td><img src="docs/preview/web-console-hooks.png" alt="훅 A/B 판정" /></td>
+    <td><img src="docs/preview/web-console-hooks.png" alt="훅 A/B 판정과 훅 유형 비교" /></td>
+  </tr>
+  <tr>
+    <td colspan="2"><img src="docs/preview/web-console-osmu.png" alt="OSMU 변환 — 대본 하나로 릴스·쇼츠·블로그/스레드" /></td>
   </tr>
 </table>
 
@@ -959,7 +965,9 @@ npm run typecheck:web # 타입 검사 (src + web, DOM lib 포함)
 |------|------|------|
 | `tests/hash.test.ts` | 9 | SHA-1/SHA-256/HMAC 벡터, `node:crypto` 대조, 55바이트 경계, `createHash` 표면 |
 | `tests/webModels.test.ts` | 13 | 타임라인 합계·3.5초 훅·자막 폭·더킹 15/55%·편집 문장 보존·댓글 1건→DM 1건·도배 차단·5초 초과 DLQ·1,000건 오버이슈 0·쿼터 소진·DLQ 재시도·A/B 판정 |
-| `tests/webConsole.test.tsx` | 4 | jsdom에서 실제 클릭: 스튜디오 렌더, 댓글→DM→수령, 쿼터 중단, A/B 표본 수집 |
+| `tests/webConsole.test.tsx` | 6 | jsdom에서 실제 클릭: 스튜디오 렌더, 댓글→DM→수령, 쿼터 중단, A/B 표본 수집, OSMU 3포맷 전환, 훅 패턴 표 |
+| `tests/osmu.test.ts` | 12 | 편집한 대본이 캡션에 반영 · 릴스 5~8태그·저장 CTA · 쇼츠 제목 40자·타임라인 오름차순 · 스레드 500자 분할 · 훅 3.5초 경고 |
+| `tests/hookPatternSim.test.ts` | 9 | 4유형 순서·범위 · 저장/공유 리더 1개씩 · 3초 초과 감점 · 숫자 주제 보정 · 결정성 |
 
 ### 18.4 정직한 경계
 
@@ -1101,6 +1109,51 @@ npm run cli -- crosschannel --topic "겨울 제주 여행 2박3일 코스" --out
 기존 휴리스틱 작가로 폴백합니다. LLM 경로는 응답 스키마를 검증하지만 사실 관계를 검증하지 않습니다.
 
 ---
+
+## 21. OSMU 변환기 & 훅 패턴 비교 — 같은 대본을 세 곳에, 같은 주제로 네 가지 훅
+
+크로스채널 기획(§20)이 "주제 하나로 무엇을 만들 것인가"를 정한다면, 이 두 기능은 그 다음 질문을 맡는다.
+**이미 만든 대본으로 각 플랫폼에 올릴 글을 한 번에 쓰는 일**과, **노출을 쓰기 전에 어떤 형태의 훅이 유리한지 비교하는 일**이다.
+
+### 21.1 원소스 멀티유즈 — `osmuConverter.ts`
+
+입력은 주제가 아니라 **스튜디오의 4비트 대본**(`SceneDraft[]`)이다. 주제로 캡션을 다시 쓰면 작가가 스튜디오에서
+한 줄을 고친 순간 캡션이 영상과 어긋난다. 같은 대본을 읽으면 캡션이 영상과 같은 말을 하고, 쇼츠 설명의
+타임라인은 `estimateSpeechSeconds`로 잰 비트 길이를 그대로 쓴다(목표 길이를 넘으면 비례 축소).
+
+| 포맷 | 구성 | 지키는 상한 · 규칙 |
+| --- | --- | --- |
+| 인스타그램 릴스 캡션 | 첫 줄(훅) → 문제 → 번호 매긴 해결 단계 → 저장 요청 → 해시태그 | 2,200자 · 태그 5~8개 · 첫 줄 60자 이내 · 저장 문장 포함 |
+| 유튜브 쇼츠 설명 | 제목 → 한 문단 요약 → `00:00 훅 …` 비트 타임라인 → CTA → 태그 | 5,000자 · 제목 40자 이내 · 태그 3개 이내 · 타임라인 오름차순 |
+| 블로그 · 스레드 요약 | 제목 → 도입 → 번호 목록 → 마무리 → 태그, 스레드는 같은 글을 500자 단위로 분할 | 요약 250~1,200자 · 태그 5개 이내 · 스레드 글당 500자 이내 |
+
+- 각 포맷은 `checks[]`를 함께 돌려준다. 화면은 통과/실패를 그대로 보여 주고, "확인 필요" KPI가 실패 수를 센다.
+  조용히 잘라서 통과시키지 않는다.
+- 스레드 분할은 문단 → 문장 순서로 자른다. 500자를 넘는 문단 하나가 있으면 문장 경계에서 쪼개고,
+  각 글자를 화면에 표시해 상한을 넘지 않았음을 확인할 수 있게 했다.
+- 대본에 훅이 없거나 3.5초를 넘으면 경고를 남긴다. 캡션에서 임의로 지우지 않는다.
+
+### 21.2 훅 패턴 비교 — `hookPatternSim.ts`
+
+A/B 카드는 "이미 노출을 쓴 뒤"의 질문에 답한다. 이 표는 그 전에 네 가지 **형태**(질문형·숫자형·반전형·체크리스트형)를
+같은 주제로 실제 작성해 보고 상대 비교한다. 훅 문장은 앵글만 바꿔 엔진(`topicDraftWriter`)이 쓴 것이고,
+길이(초)는 렌더러와 같은 발화 추정식이다.
+
+```
+추정 저장률 = 기준선 × 카테고리 저장 성향 × 숫자 포함 보정 × 의도 보정 × 훅 길이 감점
+```
+
+- 기준선·배수는 **상대 비교용 휴리스틱**이다. 실측 전환율이 아니며 화면에도 `휴리스틱 추정(실측 아님)`으로 적는다.
+- 어떤 배수가 적용됐는지 행마다 돌려주므로, 화면은 "왜 이 유형이 앞서는지"를 함께 보여 준다.
+- 결정은 여전히 A/B가 한다. 이 표의 역할은 **어떤 훅부터 실험할지**를 정하는 것이다.
+
+### 21.3 검증
+
+| 구분 | 내용 |
+| --- | --- |
+| 단위 (`osmu.test.ts`, 12) | 편집한 대본이 캡션에 반영(주제만으로는 나올 수 없는 문장) · 3포맷 순서 · 릴스 태그/CTA/글자 수 · 쇼츠 제목·타임라인 · 스레드 분할 상한 · 훅 경고 · 결정성 |
+| 단위 (`hookPatternSim.test.ts`, 9) | 4유형 순서·범위 · 저장/공유 리더 각 1개 · 3초/3.5초 감점 · 숫자 주제 보정 · 카테고리 배수 노출 · 결정성 |
+| jsdom (`webConsole.test.tsx`, +2) | OSMU 탭에서 3포맷 전환·스레드 분할 표시, 훅 탭에서 4유형 표와 `실측 아님` 문구 |
 
 ## 작성자
 
