@@ -1,6 +1,6 @@
 <p align="center">
   <a href="https://github.com/Shye-Seo/sns-shortform-automation/actions/workflows/ci.yml"><img alt="CI Pipeline" src="https://github.com/Shye-Seo/sns-shortform-automation/actions/workflows/ci.yml/badge.svg" /></a>
-  <img alt="Tests" src="https://img.shields.io/badge/tests-586_(Vitest_461_%C2%B7_PHPUnit_125)-2E7D32?style=flat-square" />
+  <img alt="Tests" src="https://img.shields.io/badge/tests-610_(Vitest_485_%C2%B7_PHPUnit_125)-2E7D32?style=flat-square" />
   <img alt="Web demo" src="https://img.shields.io/badge/web_demo-in_docs/(Pages_setup_needed)-13315C?style=flat-square" />
 </p>
 
@@ -12,7 +12,7 @@
 그것을 **수십 개 테넌트 · 수백 편 · 플랫폼 쿼터 안에서** 안정적으로 운영하는 것은
 완전히 다른 문제입니다. 이 저장소는 대규모 배포 환경의 안정성과 확장성 문제를 풉니다.
 
-`TypeScript` · `Node.js 20` · `ffmpeg` · `Vitest 461 tests` · `커버리지 86.0%`
+`TypeScript` · `Node.js 20` · `ffmpeg` · `Vitest 485 tests` · `커버리지 88.3%`
 `PHP 8.2` · `MySQL 8.0` · `Meta Graph API` · `NCP SENS 알림톡` · `PHPUnit 125 tests`
 
 | 계층 | 무엇을 보장하나 |
@@ -27,7 +27,7 @@
 | **서버 계층(DB·API)** | MySQL 8.0 기반 작업 원장 보존 및 PHP 백엔드 워커의 `SKIP LOCKED` 기반 동시성 경합 없는 작업 선점 |
 
 ```bash
-npm ci && npm run verify      # 461 tests, 네트워크·ffmpeg 없이
+npm ci && npm run verify      # 485 tests, 네트워크·ffmpeg 없이
 npm run cli -- studio         # 터미널 데모 콘솔
 npm run dev:web               # 브라우저 콘솔 → http://127.0.0.1:4173
 ```
@@ -600,7 +600,7 @@ npm run cli -- crosschannel --topic "냉장고 재료로 10분 저녁" --llm --o
 
 ```bash
 npm run verify    # typecheck + typecheck:web + lint + 485 tests
-npm run coverage  # 86.0% statements · 80.4% branches
+npm run coverage  # 88.3% statements · 81.4% branches
 ```
 
 | 영역 | 파일 | 건수 |
@@ -701,7 +701,7 @@ platform built on a working 60-second shortform pipeline.
 - **Quota planning** — pending jobs get concrete publish times under a fixed daily budget:
   spillover moves to the next window instead of failing, slot windows and a minimum gap are
   applied at the same time, and priority decides who keeps their preferred time.
-- **Verification** — 461 Vitest cases, 86.0% statement coverage, no network and no ffmpeg
+- **Verification** — 485 Vitest cases, 88.3% statement coverage, no network and no ffmpeg
   required (injected clock, RNG, sleep, HTTP and token refresher).
 
 ```bash
