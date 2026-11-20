@@ -7,13 +7,15 @@ import { CouponPanel } from './panels/CouponPanel';
 import { PublishingPanel } from './panels/PublishingPanel';
 import { HookPanel } from './panels/HookPanel';
 import { CrossChannelPanel } from './panels/CrossChannelPanel';
+import { OsmuPanel } from './panels/OsmuPanel';
 import { draftBeatScene } from './model/studio';
 
-type TabId = 'studio' | 'plan' | 'coupon' | 'calendar' | 'hooks';
+type TabId = 'studio' | 'plan' | 'osmu' | 'coupon' | 'calendar' | 'hooks';
 
 const TABS: Array<{ id: TabId; label: string }> = [
   { id: 'studio', label: '9:16 스튜디오' },
   { id: 'plan', label: '크로스채널 기획' },
+  { id: 'osmu', label: 'OSMU 변환' },
   { id: 'coupon', label: '댓글 → DM 쿠폰' },
   { id: 'calendar', label: '발행 캘린더 · 쿼터' },
   { id: 'hooks', label: '훅 A/B' },
@@ -71,7 +73,8 @@ export function App() {
           <h1>숏폼 스튜디오 &amp; 크로스채널 기획 콘솔</h1>
           <p>
             주제 하나로 4비트 대본·타임라인·키네틱 자막을 다시 계산하고, 릴스·쇼츠·롱폼·블로그 패턴까지 엮어
-            기획합니다. 인스타 댓글 → 5초 DM 쿠폰, 예약 발행 쿼터와 훅 A/B 판정도 같은 화면에서 확인합니다.
+            기획합니다. 같은 대본을 릴스 캡션·쇼츠 설명·블로그/스레드 요약으로 한 번에 바꾸고, 인스타 댓글 →
+            5초 DM 쿠폰, 예약 발행 쿼터와 훅 패턴 비교도 같은 화면에서 확인합니다.
           </p>
         </div>
         <div className="meta">
@@ -119,6 +122,15 @@ export function App() {
 
       {tab === 'plan' ? (
         <CrossChannelPanel topic={topic} onTopic={changeTopic} onBackToStudio={() => setTab('studio')} />
+      ) : null}
+
+      {tab === 'osmu' ? (
+        <OsmuPanel
+          topic={topic}
+          drafts={drafts}
+          durationSec={durationSec}
+          onBackToStudio={() => setTab('studio')}
+        />
       ) : null}
 
       {tab === 'coupon' ? <CouponPanel /> : null}

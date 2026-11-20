@@ -153,6 +153,34 @@ describe('web console', () => {
     expect(text()).toContain('DLQ');
   });
 
+  it('converts the studio script into three publishing formats on the OSMU tab', async () => {
+    await click('OSMU 변환');
+    expect(text()).toContain('원소스 멀티유즈');
+    expect(text()).toContain('인스타그램 릴스 캡션');
+    expect(text()).toContain('유튜브 쇼츠 설명');
+    expect(text()).toContain('블로그 · 스레드 요약 포스트');
+
+    const preview = container.querySelector('[data-testid="osmu-text"]');
+    expect(preview?.textContent ?? '').toContain('#');
+
+    await click('유튜브 쇼츠 설명');
+    expect((container.querySelector('[data-testid="osmu-text"]')?.textContent ?? '')).toContain('타임라인');
+
+    await click('블로그 · 스레드 요약 포스트');
+    await click('스레드');
+    expect(text()).toContain('스레드 분할');
+  });
+
+  it('compares the four hook patterns before spending impressions', async () => {
+    await click('훅 A/B');
+    expect(text()).toContain('훅 유형별 예상 저장·공유 전환');
+    expect(text()).toContain('질문형');
+    expect(text()).toContain('숫자형');
+    expect(text()).toContain('반전형');
+    expect(text()).toContain('체크리스트형');
+    expect(text()).toContain('실측 아님');
+  });
+
   it('collects A/B samples and keeps the decision honest', async () => {
     await click('훅 A/B');
     expect(text()).toContain('훅 A/B');

@@ -1,6 +1,8 @@
 import { useMemo, useReducer, useState } from 'react';
 import { Button, Card, Kpi, Pill, num, pct } from '../ui';
 import { AbTest, type ArmId, type MetricRow } from '../model/abtest';
+import { estimateHookPatterns } from '../../src/services/hookPatternSim';
+import { ANGLE_BY_ID } from '../../src/services/patternLibrary';
 
 export interface HookPanelProps {
   topic: string;
@@ -17,11 +19,15 @@ const ANGLE_LABEL: Record<string, string> = {
 
 export function HookPanel({ topic, onAdopt }: HookPanelProps) {
   const test = useMemo(() => new AbTest(topic), [topic]);
+  // 같은 주제로 앵글만 바꿔 쓴 훅 4종. 저장·공유 전환은 상대 비교용 추정치다.
+  const patterns = useMemo(() => estimateHookPatterns({ topic, durationSec: 45 }), [topic]);
   // `test` is a mutable instance: any state change re-reads its current numbers.
   const [, bump] = useReducer((value: number) => value + 1, 0);
   const [adopted, setAdopted] = useState<ArmId | null>(null);
 
   const result = test.evaluate();
+  const maxSave = Math.max(...patterns.rows.map((row) => row.saveRate), 0.001);
+  const maxShare = Math.max(...patterns.rows.map((row) => row.shareRate), 0.001);
   const [a, b] = test.arms;
 
   const collect = (perArm: number): void => {
@@ -194,6 +200,103 @@ export function HookPanel({ topic, onAdopt }: HookPanelProps) {
           ) : null}
         </Card>
       </div>
+
+
+      <Card
+        title="훅 유형별 예상 저장·공유 전환"
+        hint="같은 주제로 앵글만 바꿔 엔진이 쓴 훅 4종 · 휴리스틱 추정(실측 아님)"
+        actions={<Pill tone="ghost">A/B로 실측 확인</Pill>}
+      >
+        <div className="scroll" style={{ maxHeight: 'none' }}>
+          <table className="data">
+            <thead>
+              <tr>
+                <th>유형</th>
+                <th>훅 문장</th>
+                <th className="num">길이</th>
+                <th className="num">3초 유지</th>
+                <th>저장 전환</th>
+                <th>공유 전환</th>
+                <th>판단</th>
+              </tr>
+            </thead>
+            <tbody>
+              {patterns.rows.map((row) => (
+                <tr key={row.id}>
+                  <td>
+                    <strong style={{ fontSize: 12.5 }}>{row.label}</strong>
+                    <div className="small muted">{ANGLE_BY_ID[row.angle].label}</div>
+                  </td>
+                  <td style={{ maxWidth: 280 }}>{row.example}</td>
+                  <td className="num mono">{row.hookSeconds.toFixed(1)}s</td>
+                  <td className="num mono">{pct(row.holdRate3s * 100, 1)}</td>
+                  <td>
+                    <div className="row" style={{ gap: 8, flexWrap: 'nowrap' }}>
+                      <span className="meter" style={{ width: 72 }}>
+                        <span
+                          style={{
+                            width: `${Math.min(100, (row.saveRate / maxSave) * 100).toFixed(0)}%`,
+                            background: row.id === patterns.bestSave ? 'var(--ok)' : '#6d7b8c',
+                          }}
+                        />
+                      </span>
+                      <span className="num mono" style={{ fontSize: 12 }}>
+                        {pct(row.saveRate * 100, 2)}
+                      </span>
+                    </div>
+                  </td>
+                  <td>
+                    <div className="row" style={{ gap: 8, flexWrap: 'nowrap' }}>
+                      <span className="meter" style={{ width: 72 }}>
+                        <span
+                          style={{
+                            width: `${Math.min(100, (row.shareRate / maxShare) * 100).toFixed(0)}%`,
+                            background: row.id === patterns.bestShare ? 'var(--ok)' : '#6d7b8c',
+                          }}
+                        />
+                      </span>
+                      <span className="num mono" style={{ fontSize: 12 }}>
+                        {pct(row.shareRate * 100, 2)}
+                      </span>
+                    </div>
+                  </td>
+                  <td>
+                    {row.verdict.includes('우세') ? (
+                      <Pill tone="ok">{row.verdict}</Pill>
+                    ) : (
+                      <Pill tone="ghost">{row.verdict}</Pill>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <div className="divider" />
+        <div className="grid two" style={{ gap: 12 }}>
+          <div>
+            <h3>적용된 배수 (추정 근거)</h3>
+            <ul className="small muted" style={{ margin: '0 0 0 16px', padding: 0, lineHeight: 1.7 }}>
+              {patterns.rows.map((row) => (
+                <li key={row.id}>
+                  <strong>{row.label}</strong> — {row.factors.length > 0 ? row.factors.join(' · ') : '주제 보정 없음 (기준선)'}
+                </li>
+              ))}
+            </ul>
+          </div>
+          <div>
+            <h3>읽는 법</h3>
+            <ul className="small muted" style={{ margin: '0 0 0 16px', padding: 0, lineHeight: 1.7 }}>
+              {patterns.notes.map((note, index) => (
+                <li key={index}>{note}</li>
+              ))}
+            </ul>
+            <p className="note" style={{ marginTop: 8 }}>
+              {patterns.method} · 카테고리 «{patterns.profile.categoryLabel}» 기준
+            </p>
+          </div>
+        </div>
+      </Card>
 
       <Card title="지표별 비교" hint="비율 지표는 양측 z-검정 + Wilson 95% 구간">
         <div className="scroll" style={{ maxHeight: 'none' }}>
