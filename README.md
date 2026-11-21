@@ -961,7 +961,7 @@ npx tsx -e "...simulateCommentStorm({ comments: 1000, concurrency: 256, clickRat
 
 ---
 
-## 18. 웹 데모 콘솔 — 주제연동 스튜디오 · 크로스채널 기획 · OSMU 변환 · 댓글 DM · 발행 쿼터 · 훅 A/B
+## 18. 웹 데모 콘솔 — 주제연동 스튜디오 · 크로스채널 기획 · 한 편을 세 곳으로(OSMU) · 댓글 DM · 발행 쿼터 · 훅 A/B
 
 **데모**: <https://shye-seo.github.io/sns-shortform-automation/>
 
@@ -979,7 +979,7 @@ npx tsx -e "...simulateCommentStorm({ comments: 1000, concurrency: 256, clickRat
 | **크로스채널 기획** | 주제 하나로 릴스/쇼츠 대본 + 유튜브 롱폼 목차 + 네이버·티스토리·워드프레스 글 뼈대를 같은 단계 순서로 생성. 레퍼런스 글을 붙이면 훅 유형·단계 수·저장 유도를 읽어 앵글과 목차에 반영하고, 숏폼→챕터→H2 리퍼포징 맵을 표로 보여줌 | `topicProfile`, `patternLibrary`(6개 채널 구조), `contentAnalyzer`, `crossChannelPlanner`, `planMarkdown` |
 | **댓글 → DM 쿠폰** | ① 게시물(릴스·피드) 선택 → ② 키워드·보상·수량·유효시간 규칙 적용 → ③ 웹훅 연결 3단계 안내(콜백 주소·구독 항목·서버 처리 순서) → ④ 받은 댓글·보낸 DM·퍼널. 다른 게시물의 댓글은 같은 계정이라도 반응하지 않고, 연결 전에는 같은 엔진에 시험 댓글을 넣어 확인 | `core/interactiveCouponDispatcher` 전체(서명 검증·멱등·어뷰징·5초 데드라인·1회용 토큰·퍼널), `web/model/coupon.ts`(게시물별 캠페인) |
 | **발행 캘린더 · 쿼터** | 지터가 들어간 예약 타임라인, 인스타그램 25건/24시간·유튜브 10,000할당량 게이지, 한도 소진 시 발행 중단, 실패 작업 재시도/정리와 운영자 기록 | `rateLimit/jitter.planPublishSlots`, `rateLimit/tenantRegistry`(이동 창·캘린더 데이 리셋), `queue/jobQueue`, `studio/dlqActions`, `web/model/labels`(사유 번역) |
-| **OSMU 변환** | 스튜디오의 4비트 대본을 릴스 캡션·쇼츠 설명(비트 타임라인 포함)·블로그/스레드 요약으로 동시 변환. 글자 상한과 작성 규칙을 체크로 표시하고, 스레드는 500자 단위로 분할해 각각 복사 | `osmuConverter`(`buildBeatTimeline`·`buildHashtags`·`splitForThreads`), `scriptEngine` 대본, `topicProfile`, `topicBanks` |
+| **한 편을 세 곳으로** (OSMU 변환) | 스튜디오의 4비트 대본을 릴스 캡션·쇼츠 설명(비트 타임라인 포함)·블로그/스레드 요약으로 동시 변환. 글자 상한과 작성 규칙을 체크로 표시하고, 스레드는 500자 단위로 분할해 각각 복사 | `osmuConverter`(`buildBeatTimeline`·`buildHashtags`·`splitForThreads`), `scriptEngine` 대본, `topicProfile`, `topicBanks` |
 | **훅 A/B** | 수집 주기(1시간·6시간·하루)와 비교 기간(24시간·7일)을 고르고, 수집이 끝난 상태를 시나리오 4종(3시간·24시간·7일·차이 없던 주)으로 재현. 끝까지 본 비율·쿠폰 사용을 같은 통계로 비교하고, 표본이 부족하거나 차이가 우연이면 승자를 부르지 않음. 승자 채택 시 스튜디오 대본에 반영. 같은 주제의 훅 4유형 추정치도 함께 비교 | `telemetry/hooks.generateHookVariants`, `telemetry/significance`(`evaluateExperiment`·`twoProportionZTest`·`wilsonInterval`·`requiredSampleSize`), `hookPatternSim`, `web/model/abtest`(시나리오) |
 
 <table>

@@ -167,8 +167,8 @@ describe('web console', () => {
   });
 
   it('converts the studio script into three publishing formats on the OSMU tab', async () => {
-    await click('OSMU 변환');
-    expect(text()).toContain('원소스 멀티유즈');
+    await click('한 편을 세 곳으로');
+    expect(text()).toContain('대본 하나로 세 곳에 올릴 글');
     expect(text()).toContain('인스타그램 릴스 캡션');
     expect(text()).toContain('유튜브 쇼츠 설명');
     expect(text()).toContain('블로그 · 스레드 요약 포스트');

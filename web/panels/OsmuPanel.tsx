@@ -130,7 +130,7 @@ export function OsmuPanel({ topic, drafts, durationSec, language = 'ko', onBackT
       </div>
 
       <Card
-        title="원소스 멀티유즈 — 대본 하나로 세 곳에 올릴 글"
+        title="대본 하나로 세 곳에 올릴 글"
         hint="스튜디오의 4비트 대본을 그대로 읽어 캡션·설명·요약 포스트를 만듭니다. 대본을 고치면 여기도 같이 바뀝니다."
         actions={
           <>
@@ -172,7 +172,7 @@ export function OsmuPanel({ topic, drafts, durationSec, language = 'ko', onBackT
           </Button>
         }
       >
-        <div className="row" role="tablist" aria-label="OSMU 포맷" style={{ gap: 6, marginBottom: 12 }}>
+        <div className="row" role="tablist" aria-label="변환 포맷" style={{ gap: 6, marginBottom: 12 }}>
           {conversion.formats.map((format) => (
             <button
               key={format.id}

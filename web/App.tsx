@@ -15,7 +15,7 @@ type TabId = 'studio' | 'plan' | 'osmu' | 'coupon' | 'calendar' | 'hooks';
 const TABS: Array<{ id: TabId; label: string }> = [
   { id: 'studio', label: '9:16 스튜디오' },
   { id: 'plan', label: '크로스채널 기획' },
-  { id: 'osmu', label: 'OSMU 변환' },
+  { id: 'osmu', label: '한 편을 세 곳으로' },
   { id: 'coupon', label: '댓글 → DM 쿠폰' },
   { id: 'calendar', label: '발행 캘린더 · 쿼터' },
   { id: 'hooks', label: '훅 A/B' },
