@@ -92,6 +92,18 @@ export interface InteractiveCampaign {
   startsAt: number;
   endsAt: number;
   status: "draft" | "scheduled" | "live" | "paused" | "ended";
+  /**
+   * 팔로워 전용 캠페인. true면 댓글 작성자가 팔로워임이 확인된 경우에만 DM을 보낸다.
+   * 확인되지 않은(null) 댓글은 보내지 않는다 — 모르는 사람에게 먼저 DM을 보내는 쪽이
+   * 더 큰 위험이라, 판단이 안 되면 보내지 않는 쪽으로 정한다.
+   */
+  followerOnly?: boolean;
+  /**
+   * 발송 간격(초). 0이면 즉시. 같은 캠페인의 DM을 이 간격만큼 띄워 보낸다.
+   * 데드라인은 "보내도 되는 시각 + 5초"로 옮겨 간다(간격이 5초 SLA를 밀어내는 게 아니라,
+   * 대기열 뒤에 선 만큼 SLA의 시작점이 뒤로 간다).
+   */
+  sendIntervalSeconds?: number;
 }
 
 export interface CommentEvent {
@@ -103,6 +115,8 @@ export interface CommentEvent {
   text: string;
   receivedAt: number;
   isNewAccount?: boolean;
+  /** 팔로워 여부. null/undefined면 확인되지 않음. */
+  isFollower?: boolean | null;
 }
 
 export interface DispatchJob {
@@ -142,6 +156,8 @@ export interface IngestReport {
   duplicates: number;
   abuseBlocked: number;
   noSignature: number;
+  /** 팔로워 전용 캠페인에서 팔로워가 아니어서 건너뛴 수. */
+  nonFollower: number;
 }
 
 export interface DispatchCycleReport {
@@ -246,6 +262,12 @@ export function parseWebhook(payload: unknown, now: number): CommentEvent[] {
           handleRef: from.username !== undefined ? String(from.username) : null,
           text: String(value.text ?? ""),
           receivedAt: now,
+          // Meta 댓글 웹훅에는 팔로워 여부가 없다. 운영 서버가 팔로워 목록을 동기화해
+          // `from.is_follower`로 실어 보낼 때만 값이 있고, 없으면 '모름'(null)이다.
+          isFollower:
+            from.is_follower === undefined || from.is_follower === null
+              ? null
+              : from.is_follower === true || from.is_follower === "true" || from.is_follower === 1,
         });
       }
     }
@@ -264,6 +286,10 @@ export function parseWebhook(payload: unknown, now: number): CommentEvent[] {
         text: String(raw.text ?? ""),
         receivedAt: now,
         isNewAccount: Boolean(raw.isNewAccount),
+        isFollower:
+          raw.isFollower === undefined || raw.isFollower === null
+            ? null
+            : raw.isFollower === true || raw.isFollower === "true",
       });
     }
   }
@@ -319,6 +345,9 @@ export class InteractiveCouponDispatcher {
   private readonly funnelCounts = new Map<number, Map<FunnelStage, number>>();
 
   private readonly stageSeen = new Set<string>();
+
+  /** 캠페인별 마지막 발송 예약 시각(ms). 슬로우 큐 간격 계산에 쓴다. */
+  private readonly lastScheduled = new Map<number, number>();
 
   private readonly nowFn: () => number;
 
@@ -400,6 +429,7 @@ export class InteractiveCouponDispatcher {
       duplicates: 0,
       abuseBlocked: 0,
       noSignature: 0,
+      nonFollower: 0,
     };
 
     // 서명이 틀린 요청은 파싱도 하지 않는다.
@@ -434,6 +464,13 @@ export class InteractiveCouponDispatcher {
         continue;
       }
 
+      // 팔로워 전용 필터. 확인되지 않은 작성자(null)는 보내지 않는다.
+      if (campaign.followerOnly && comment.isFollower !== true) {
+        report.nonFollower += 1;
+        report.ignored += 1;
+        continue;
+      }
+
       this.recordStage(campaign.id, "COMMENT", comment.externalEventId, now);
 
       const verdict = this.scoreFraud(comment);
@@ -455,6 +492,13 @@ export class InteractiveCouponDispatcher {
 
       report.accepted += 1;
 
+      // 슬로우 큐: 같은 캠페인의 발송을 간격만큼 띄운다. 데드라인은 '보내도 되는 시각'에서
+      // 다시 5초를 세므로, 간격 때문에 SLA가 깨지는 게 아니라 대기 순서만 생긴다.
+      const intervalMs = Math.max(0, Math.min(3_600, campaign.sendIntervalSeconds ?? 0)) * 1000;
+      const lastScheduled = this.lastScheduled.get(campaign.id) ?? null;
+      const availableAt = intervalMs > 0 && lastScheduled !== null ? Math.max(now, lastScheduled + intervalMs) : now;
+      this.lastScheduled.set(campaign.id, availableAt);
+
       const job: DispatchJob = {
         id: this.nextJobId++,
         campaignId: campaign.id,
@@ -464,8 +508,8 @@ export class InteractiveCouponDispatcher {
         idempotencyKey: `event:${comment.externalEventId}:${comment.authorRef}`,
         status: "PENDING",
         attempts: 0,
-        availableAt: now,
-        deadline: now + this.slaSeconds * 1000,
+        availableAt,
+        deadline: availableAt + this.slaSeconds * 1000,
       };
 
       this.jobs.set(job.id, job);

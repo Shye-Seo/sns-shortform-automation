@@ -24,6 +24,7 @@ interface DispatchQueueStore
      * Enqueue one message. Returns null when the idempotency key already exists.
      *
      * @param array<string,mixed> $payload
+     * @param \DateTimeImmutable|null $availableAt 슬로우 큐가 미는 발송 가능 시각(없으면 즉시)
      */
     public function enqueue(
         int $campaignId,
@@ -34,7 +35,14 @@ interface DispatchQueueStore
         \DateTimeImmutable $deadline,
         array $payload,
         \DateTimeImmutable $now,
+        ?\DateTimeImmutable $availableAt = null,
     ): ?int;
+
+    /**
+     * Same-campaign spacing: the last time a message for this campaign was scheduled or sent.
+     * It reads DISPATCHED rows too, because the next comment arrives after the previous DM left.
+     */
+    public function lastScheduledAt(int $campaignId): ?\DateTimeImmutable;
 
     /**
      * Atomically claim up to $limit jobs that are due at $now.

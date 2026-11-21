@@ -5,6 +5,7 @@ import {
   DEFAULT_RULE,
   POSTS,
   REWARD_PRESETS,
+  SEND_INTERVAL_PRESETS,
   CouponDesk,
   rewardLabelOf,
   type CouponRule,
@@ -39,6 +40,9 @@ export function CouponPanel() {
   const [reward, setReward] = useState(DEFAULT_RULE.rewardAmount);
   const [claimLimit, setClaimLimit] = useState(DEFAULT_RULE.claimLimit);
   const [ttl, setTtl] = useState(DEFAULT_RULE.tokenTtlMinutes);
+  const [followerOnly, setFollowerOnly] = useState(DEFAULT_RULE.followerOnly);
+  const [sendInterval, setSendInterval] = useState(DEFAULT_RULE.sendIntervalSeconds);
+  const [commentFollower, setCommentFollower] = useState<'unknown' | 'follower' | 'stranger'>('follower');
   const [applied, setApplied] = useState(DEFAULT_RULE);
   const [appliedPost, setAppliedPost] = useState<PostItem>(POSTS[0]!);
   const [text, setText] = useState('쿠폰 주세요!');
@@ -65,7 +69,12 @@ export function CouponPanel() {
     desk.workerPaused = !autoWorker;
   }, [autoWorker, desk]);
 
-  const submit = async (input: { text: string; handle?: string; reuseAuthor?: boolean }): Promise<void> => {
+  const submit = async (input: {
+    text: string;
+    handle?: string;
+    reuseAuthor?: boolean;
+    isFollower?: boolean | null;
+  }): Promise<void> => {
     if (input.text.trim() === '') return;
     await desk.submitComment(input);
     bump();
@@ -106,6 +115,8 @@ export function CouponPanel() {
       rewardAmount: reward,
       claimLimit,
       tokenTtlMinutes: ttl,
+      followerOnly,
+      sendIntervalSeconds: sendInterval,
     };
     const post = POSTS.find((item) => item.id === postId) ?? POSTS[0]!;
     desk.applyRule(post, rule);
@@ -138,7 +149,7 @@ export function CouponPanel() {
         <Kpi
           label="받은 댓글"
           value={num(desk.ingest.received)}
-          sub={`규칙에 맞음 ${num(desk.ingest.enqueued)} · 지나감 ${num(desk.ingest.ignored)}`}
+          sub={`규칙에 맞음 ${num(desk.ingest.enqueued)} · 지나감 ${num(desk.ingest.ignored)}${desk.ingest.nonFollower > 0 ? ` · 팔로워 아님 ${num(desk.ingest.nonFollower)}` : ''}`}
         />
         <Kpi
           label="보낸 DM"
@@ -251,6 +262,38 @@ export function CouponPanel() {
               </div>
             </div>
 
+            <div className="row" style={{ gap: 16, alignItems: 'flex-end', flexWrap: 'wrap' }}>
+              <div className="field" style={{ minWidth: 190 }}>
+                <span>누구에게 보낼까요</span>
+                <Toggle checked={followerOnly} onChange={setFollowerOnly} label="팔로워만" />
+                <span className="small muted" style={{ marginTop: 4, display: 'block' }}>
+                  {followerOnly
+                    ? '팔로워로 확인된 댓글에만 보냅니다. 확인되지 않은 사람은 건너뜁니다.'
+                    : '댓글을 단 사람이면 누구에게나 보냅니다.'}
+                </span>
+              </div>
+              <div className="field" style={{ minWidth: 200 }}>
+                <span>발송 간격(슬로우 큐)</span>
+                <div className="row" style={{ gap: 4 }}>
+                  {SEND_INTERVAL_PRESETS.map((seconds) => (
+                    <Button
+                      key={seconds}
+                      small
+                      ghost={sendInterval !== seconds}
+                      onClick={() => setSendInterval(seconds)}
+                    >
+                      {seconds === 0 ? '즉시' : `${seconds}초`}
+                    </Button>
+                  ))}
+                </div>
+                <span className="small muted" style={{ marginTop: 4, display: 'block' }}>
+                  {sendInterval === 0
+                    ? '한꺼번에 보냅니다.'
+                    : `${sendInterval}초씩 띄워 보냅니다. 뒤에 선 순서만큼 5초 데드라인도 함께 밀립니다.`}
+                </span>
+              </div>
+            </div>
+
             <div className="row between">
               <Button primary onClick={applyRule}>
                 이 게시물에 규칙 적용
@@ -264,6 +307,10 @@ export function CouponPanel() {
                 ‘{applied.keywords.join(' · ')}’ 댓글 → {rewardLabelOf(applied.rewardAmount)} DM ·{' '}
                 {num(applied.claimLimit)}장 · {applied.tokenTtlMinutes}분
               </strong>
+              <span className="small muted">
+                대상: {applied.followerOnly ? '팔로워로 확인된 사람만' : '누구나'} · 발송 간격{' '}
+                {applied.sendIntervalSeconds === 0 ? '즉시' : `${applied.sendIntervalSeconds}초`}
+              </span>
               <span className="small muted">대상: {appliedPost.title}</span>
               {selectedPost.id !== appliedPost.id ? (
                 <span className="small" style={{ color: 'var(--warn)' }}>
@@ -601,6 +648,22 @@ export function CouponPanel() {
                 placeholder="예: guri_home"
               />
             </div>
+            <div className="field">
+              <span>이 댓글을 쓴 사람은</span>
+              <div className="row" style={{ gap: 4 }}>
+                {(
+                  [
+                    ['follower', '팔로워'],
+                    ['stranger', '팔로워 아님'],
+                    ['unknown', '확인 안 됨'],
+                  ] as const
+                ).map(([value, label]) => (
+                  <Button key={value} small ghost={commentFollower !== value} onClick={() => setCommentFollower(value)}>
+                    {label}
+                  </Button>
+                ))}
+              </div>
+            </div>
             <div className="row">
               {QUICK.map((item) => (
                 <Button key={item.label} small onClick={() => setText(item.text)}>
@@ -612,7 +675,11 @@ export function CouponPanel() {
               <Button
                 primary
                 onClick={() => {
-                  void submit({ text, handle });
+                  void submit({
+                    text,
+                    handle,
+                    isFollower: commentFollower === 'unknown' ? null : commentFollower === 'follower',
+                  });
                   setHandle('');
                 }}
               >
@@ -620,7 +687,11 @@ export function CouponPanel() {
               </Button>
               <Button
                 onClick={() => {
-                  void submit({ text: '쿠폰', reuseAuthor: true });
+                  void submit({
+                    text: '쿠폰',
+                    reuseAuthor: true,
+                    isFollower: commentFollower === 'unknown' ? null : commentFollower === 'follower',
+                  });
                 }}
                 title="같은 계정이 10초 안에 세 번 쓰면 도배로 보고 발급하지 않습니다."
               >

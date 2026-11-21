@@ -461,6 +461,49 @@ final class CouponPipelineIntegrationTest extends TestCase
         self::assertSame('BUDGET_EXHAUSTED', $events[1]['rejection_reason']);
     }
 
+    // ── 팔로워 전용 · 슬로우 큐 ─────────────────────────────────
+
+    public function testFollowerOnlyAndSendIntervalAreStoredAndHonoured(): void
+    {
+        $this->pdo->prepare('UPDATE interactive_campaigns SET follower_only = 1, send_interval_seconds = 5 WHERE id = ?')
+            ->execute([$this->campaignId]);
+
+        $campaign = $this->campaigns->findById($this->campaignId);
+        self::assertNotNull($campaign);
+        self::assertTrue($campaign->followerOnly, 'DB의 follower_only가 도메인 객체로 넘어와야 한다.');
+        self::assertSame(5, $campaign->sendIntervalSeconds);
+
+        $dispatcher = $this->dispatcher();
+        $webhook = $this->webhook($dispatcher);
+
+        // 1) 팔로워 여부가 없는 댓글 → IGNORED / FOLLOWER_ONLY
+        $unknown = $this->deliver($webhook, $this->body($this->commentId('쿠폰 주세요', 'it-author-a')));
+        self::assertSame(0, $unknown['comments']['enqueued']);
+        self::assertSame(1, $unknown['comments']['filtered']);
+        $events = $this->eventRows();
+        self::assertSame('IGNORED', $events[0]['processing_status']);
+        self::assertSame('FOLLOWER_ONLY', $events[0]['rejection_reason']);
+
+        // 2) 팔로워 댓글 두 건 → 5초 간격으로 예약, 데드라인은 각자의 시각 + 60초
+        $followerA = $this->commentId('쿠폰 주세요', 'it-author-b');
+        $followerA['from']['is_follower'] = true;
+        $first = $this->deliver($webhook, $this->body($followerA));
+        self::assertSame(1, $first['comments']['enqueued']);
+
+        $followerB = $this->commentId('할인 주세요', 'it-author-c');
+        $followerB['from']['is_follower'] = true;
+        $second = $this->deliver($webhook, $this->body($followerB));
+        self::assertSame(1, $second['comments']['enqueued']);
+
+        $rows = $this->queueRows();
+        self::assertCount(2, $rows);
+        $gap = strtotime((string) $rows[1]['available_at']) - strtotime((string) $rows[0]['available_at']);
+        self::assertSame(5, $gap, '같은 캠페인의 두 번째 DM은 5초 뒤로 밀린다.');
+        $deadlineGap =
+            strtotime((string) $rows[1]['dispatch_deadline_at']) - strtotime((string) $rows[1]['available_at']);
+        self::assertSame(60, $deadlineGap, '데드라인은 발송 가능 시각에서 다시 센다.');
+    }
+
     // ── fixtures ────────────────────────────────────────────────
 
     private function issueToken(string $uuid, \DateTimeImmutable $expiresAt): ClaimToken

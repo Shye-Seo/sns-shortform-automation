@@ -368,6 +368,8 @@ CREATE TABLE interactive_campaigns (
   total_reward_budget INT UNSIGNED    NOT NULL DEFAULT 0      COMMENT '총 리워드 예산(원). 0이면 무제한(비권장)',
   claim_limit         INT UNSIGNED    NOT NULL DEFAULT 0      COMMENT '발급 가능 총 장수. 0이면 무제한',
   max_claims_per_user TINYINT UNSIGNED NOT NULL DEFAULT 1     COMMENT '1인당 발급 가능 수(다계정 어뷰징 기준)',
+  follower_only       TINYINT(1)      NOT NULL DEFAULT 0      COMMENT '1=팔로워로 확인된 댓글에만 DM. 확인 안 된 작성자는 보내지 않는다',
+  send_interval_seconds SMALLINT UNSIGNED NOT NULL DEFAULT 0  COMMENT '같은 캠페인 DM 발송 간격(초). 0=즉시(슬로우 큐)',
   token_ttl_minutes   SMALLINT UNSIGNED NOT NULL DEFAULT 15   COMMENT '딥링크 토큰 유효 시간(분)',
   starts_at           DATETIME(3)     NOT NULL                COMMENT '시작 시각(KST)',
   ends_at             DATETIME(3)     NOT NULL                COMMENT '종료 시각(KST)',
@@ -385,7 +387,8 @@ CREATE TABLE interactive_campaigns (
     ON DELETE SET NULL ON UPDATE CASCADE,
   CONSTRAINT chk_interactive_campaigns_window CHECK (ends_at > starts_at),
   CONSTRAINT chk_interactive_campaigns_ttl CHECK (token_ttl_minutes BETWEEN 1 AND 1440),
-  CONSTRAINT chk_interactive_campaigns_budget CHECK (max_claims_per_user >= 1)
+  CONSTRAINT chk_interactive_campaigns_budget CHECK (max_claims_per_user >= 1),
+  CONSTRAINT chk_interactive_campaigns_interval CHECK (send_interval_seconds <= 3600)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
   COMMENT='숏폼 연계 인터랙티브 프로모션(트리거 키워드·예산·1회용 토큰 TTL)';
 

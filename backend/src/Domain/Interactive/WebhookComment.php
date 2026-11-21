@@ -26,6 +26,11 @@ final class WebhookComment
         public readonly \DateTimeImmutable $receivedAt,
         public readonly ?string $clientIp = null,
         public readonly bool $isNewAccount = false,
+        /**
+         * 작성자가 이 계정의 팔로워인지. Meta 댓글 웹훅에는 이 값이 없으므로 보통 null이고,
+         * 팔로워 목록을 동기화하는 쪽(운영 서버의 Graph API 동기화)이 실어 보낼 때만 값이 있다.
+         */
+        public readonly ?bool $authorFollowsAccount = null,
     ) {
     }
 }

@@ -63,7 +63,7 @@ final class InteractiveCouponDispatcher
      */
     public function handleWebhook(array $payload, bool $signatureValid, ?string $clientIp = null): WebhookHandlingResult
     {
-        $counts = ['processed' => 0, 'accepted' => 0, 'enqueued' => 0, 'ignored' => 0, 'duplicate' => 0, 'abuse' => 0, 'rejected' => 0];
+        $counts = ['processed' => 0, 'accepted' => 0, 'enqueued' => 0, 'ignored' => 0, 'duplicate' => 0, 'abuse' => 0, 'rejected' => 0, 'filtered' => 0];
 
         // 1) 서명이 틀린 요청은 파싱도 하지 않는다(공격자 데이터를 DB에 넣지 않는다).
         if (! $signatureValid) {
@@ -92,13 +92,18 @@ final class InteractiveCouponDispatcher
             $keyword = $campaign->matchKeyword($comment->text);
             $verdict = $this->fraud->assess($comment, $clientIp);
 
+            // 팔로워 전용 캠페인: 팔로워임이 확인된 작성자에게만 보낸다.
+            $notAFollower = $campaign->followerOnly && $comment->authorFollowsAccount !== true;
+
             $status = match (true) {
                 $keyword === null => 'IGNORED',
+                $notAFollower => 'IGNORED',
                 $verdict->isBlocked() => 'REJECTED',
                 default => 'QUEUED',
             };
             $reason = match (true) {
                 $keyword === null => 'NO_KEYWORD',
+                $notAFollower => 'FOLLOWER_ONLY',
                 $verdict->isBlocked() => 'ABUSE:' . $verdict->summary(),
                 default => null,
             };
@@ -124,6 +129,13 @@ final class InteractiveCouponDispatcher
                 continue;
             }
 
+            // 팔로워가 아니면 이벤트만 남기고 발송하지 않는다(예산도 쓰지 않는다).
+            if ($notAFollower) {
+                $counts['filtered']++;
+                $counts['ignored']++;
+                continue;
+            }
+
             if ($verdict->isBlocked()) {
                 $counts['abuse']++;
                 continue;
@@ -138,6 +150,10 @@ final class InteractiveCouponDispatcher
 
             $counts['accepted']++;
 
+            // 슬로우 큐: 같은 캠페인의 DM을 간격만큼 띄운다. 데드라인도 그 시각에서 다시 5초를
+            // 세므로, 간격 때문에 늦게 보내는 게 아니라 대기 순서가 생기는 것이다.
+            $availableAt = $this->nextSendSlot($campaign, $now);
+
             // 4) 큐 적재(5초 데드라인). 발송은 워커가 한다.
             $queueId = $this->queue->enqueue(
                 campaignId: $campaign->id,
@@ -145,7 +161,7 @@ final class InteractiveCouponDispatcher
                 channel: $comment->platform === 'instagram' ? 'INSTAGRAM_DM' : 'ALIMTALK',
                 recipientRef: $comment->authorRef,
                 idempotencyKey: sprintf('event:%d:dm:%s', $eventId, $comment->authorRef),
-                deadline: $now->modify("+{$this->slaSeconds} seconds"),
+                deadline: $availableAt->modify("+{$this->slaSeconds} seconds"),
                 payload: [
                     'campaignCode' => $campaign->code,
                     'rewardLabel' => $campaign->rewardLabel,
@@ -155,6 +171,7 @@ final class InteractiveCouponDispatcher
                     'commentId' => $comment->externalEventId,
                 ],
                 now: $now,
+                availableAt: $availableAt,
             );
 
             if ($queueId === null) {
@@ -323,6 +340,7 @@ final class InteractiveCouponDispatcher
                     if (! is_array($value) || ! isset($value['id'])) {
                         continue;
                     }
+                    $follower = $value['from']['is_follower'] ?? null;
                     $comments[] = new WebhookComment(
                         externalEventId: (string) $value['id'],
                         platform: 'instagram',
@@ -332,6 +350,7 @@ final class InteractiveCouponDispatcher
                         text: (string) ($value['text'] ?? ''),
                         receivedAt: $now,
                         clientIp: $clientIp,
+                        authorFollowsAccount: $follower === null ? null : (bool) $follower,
                     );
                 }
             }
@@ -353,6 +372,7 @@ final class InteractiveCouponDispatcher
                     text: (string) ($event['text'] ?? ''),
                     receivedAt: $now,
                     isNewAccount: (bool) ($event['isNewAccount'] ?? false),
+                    authorFollowsAccount: isset($event['isFollower']) ? (bool) $event['isFollower'] : null,
                 );
             }
         }
@@ -387,6 +407,27 @@ final class InteractiveCouponDispatcher
         ));
 
         return ['plain' => $plain, 'uuid' => $uuid, 'id' => $tokenId, 'elapsedMs' => (microtime(true) - $startedAt) * 1000];
+    }
+
+    /**
+     * 다음 발송 가능 시각. 간격이 0이면 지금이다.
+     * 마지막 예약·발송 시각에서 간격을 더하되, 지금보다 빠르면 지금으로 당긴다.
+     */
+    private function nextSendSlot(InteractiveCampaign $campaign, \DateTimeImmutable $now): \DateTimeImmutable
+    {
+        $spacing = $campaign->sendSpacingSeconds();
+        if ($spacing === 0) {
+            return $now;
+        }
+
+        $last = $this->queue->lastScheduledAt($campaign->id);
+        if ($last === null) {
+            return $now;
+        }
+
+        $next = $last->modify("+{$spacing} seconds");
+
+        return $next > $now ? $next : $now;
     }
 
     private function hasBudget(InteractiveCampaign $campaign): bool

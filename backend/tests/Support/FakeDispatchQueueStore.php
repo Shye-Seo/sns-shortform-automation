@@ -32,6 +32,7 @@ final class FakeDispatchQueueStore implements DispatchQueueStore
         \DateTimeImmutable $deadline,
         array $payload,
         \DateTimeImmutable $now,
+        ?\DateTimeImmutable $availableAt = null,
     ): ?int {
         foreach ($this->rows as $row) {
             if ($row['idempotencyKey'] === $idempotencyKey) {
@@ -49,7 +50,7 @@ final class FakeDispatchQueueStore implements DispatchQueueStore
             'idempotencyKey' => $idempotencyKey,
             'status' => 'PENDING',
             'attempts' => 0,
-            'availableAt' => $now,
+            'availableAt' => $availableAt ?? $now,
             'deadline' => $deadline,
             'createdAt' => $now,
             'payload' => $payload,
@@ -58,6 +59,25 @@ final class FakeDispatchQueueStore implements DispatchQueueStore
         ];
 
         return $id;
+    }
+
+    public function lastScheduledAt(int $campaignId): ?\DateTimeImmutable
+    {
+        $last = null;
+        foreach ($this->rows as $row) {
+            if ($row['campaignId'] !== $campaignId) {
+                continue;
+            }
+            if (! in_array($row['status'], ['PENDING', 'RETRY', 'CLAIMED', 'DISPATCHED'], true)) {
+                continue;
+            }
+            $at = $row['dispatchedAt'] ?? $row['availableAt'];
+            if ($last === null || $at > $last) {
+                $last = $at;
+            }
+        }
+
+        return $last;
     }
 
     public function claimReady(\DateTimeImmutable $now, int $limit, ?string $workerId = null, ?int $campaignId = null): array

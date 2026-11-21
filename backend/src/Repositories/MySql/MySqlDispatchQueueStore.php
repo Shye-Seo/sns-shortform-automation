@@ -51,6 +51,7 @@ final class MySqlDispatchQueueStore implements DispatchQueueStore
         \DateTimeImmutable $deadline,
         array $payload,
         \DateTimeImmutable $now,
+        ?\DateTimeImmutable $availableAt = null,
     ): ?int {
         $pdo = $this->connection->pdo();
         $stmt = $pdo->prepare(
@@ -68,7 +69,7 @@ final class MySqlDispatchQueueStore implements DispatchQueueStore
             'channel' => $channel,
             'recipient' => mb_substr($recipientRef, 0, 120),
             'idempotency_key' => mb_substr($idempotencyKey, 0, 120),
-            'available_at' => DbTime::format($now),
+            'available_at' => DbTime::format($availableAt ?? $now),
             'deadline' => DbTime::format($deadline),
             'payload' => json_encode($payload, JSON_UNESCAPED_UNICODE),
             'now_created' => DbTime::format($now),
@@ -80,6 +81,21 @@ final class MySqlDispatchQueueStore implements DispatchQueueStore
         }
 
         return (int) $pdo->lastInsertId();
+    }
+
+    public function lastScheduledAt(int $campaignId): ?\DateTimeImmutable
+    {
+        $stmt = $this->connection->pdo()->prepare(
+            "SELECT MAX(COALESCE(dispatched_at, available_at)) AS last_at
+               FROM dispatch_queue
+              WHERE campaign_id = :campaign_id
+                AND status IN ('PENDING','RETRY','CLAIMED','DISPATCHED')"
+        );
+        $stmt->execute(['campaign_id' => $campaignId]);
+        $row = $stmt->fetch();
+        $value = $row === false ? null : ($row['last_at'] ?? null);
+
+        return $value === null || $value === '' ? null : DbTime::parse((string) $value);
     }
 
     public function claimReady(\DateTimeImmutable $now, int $limit, ?string $workerId = null, ?int $campaignId = null): array

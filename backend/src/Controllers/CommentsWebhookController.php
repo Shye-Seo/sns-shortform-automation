@@ -25,7 +25,7 @@ final class CommentsWebhookController
 
     /**
      * @param array<string,mixed> $payload
-     * @return array{processed:int, accepted:int, enqueued:int, ignored:int, duplicate:int, abuse:int, rejected:int, status:string}
+     * @return array{processed:int, accepted:int, enqueued:int, ignored:int, duplicate:int, abuse:int, rejected:int, filtered:int, status:string}
      */
     public function apply(array $payload, ?string $clientIp = null): array
     {
@@ -39,6 +39,8 @@ final class CommentsWebhookController
             'duplicate' => $result->counts['duplicate'] ?? 0,
             'abuse' => $result->counts['abuse'] ?? 0,
             'rejected' => $result->counts['rejected'] ?? 0,
+            // 팔로워 전용 캠페인에서 팔로워가 아니어서 건너뛴 수(ignored에 포함된다).
+            'filtered' => $result->counts['filtered'] ?? 0,
             'status' => $result->reason !== '' ? $result->reason : 'OK',
         ];
     }

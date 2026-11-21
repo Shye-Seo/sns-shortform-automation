@@ -22,7 +22,7 @@ final class MySqlCampaignCatalog implements CampaignCatalog
 {
     private const COLUMNS = 'id, tenant_id, code, platform, content_ref, trigger_keywords, reward_label,
         reward_amount, total_reward_budget, claim_limit, max_claims_per_user, token_ttl_minutes,
-        starts_at, ends_at, status';
+        starts_at, ends_at, status, follower_only, send_interval_seconds';
 
     public function __construct(private readonly Connection $connection)
     {
@@ -109,6 +109,8 @@ final class MySqlCampaignCatalog implements CampaignCatalog
             startsAt: DbTime::parse((string) $row['starts_at']) ?? new \DateTimeImmutable('now'),
             endsAt: DbTime::parse((string) $row['ends_at']) ?? new \DateTimeImmutable('now'),
             status: (string) $row['status'],
+            followerOnly: (bool) ($row['follower_only'] ?? false),
+            sendIntervalSeconds: (int) ($row['send_interval_seconds'] ?? 0),
         );
     }
 }

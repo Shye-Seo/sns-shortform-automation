@@ -75,6 +75,10 @@ export interface CouponRule {
   rewardAmount: number;
   claimLimit: number;
   tokenTtlMinutes: number;
+  /** 팔로워가 확인된 댓글에만 DM을 보낸다. */
+  followerOnly: boolean;
+  /** 같은 게시물의 DM을 몇 초 간격으로 보낼지(0 = 즉시). */
+  sendIntervalSeconds: number;
 }
 
 export const DEFAULT_RULE: CouponRule = {
@@ -82,7 +86,11 @@ export const DEFAULT_RULE: CouponRule = {
   rewardAmount: 5_000,
   claimLimit: 100,
   tokenTtlMinutes: 15,
+  followerOnly: false,
+  sendIntervalSeconds: 0,
 };
+
+export const SEND_INTERVAL_PRESETS = [0, 3, 10, 30] as const;
 
 export const REWARD_PRESETS = [3_000, 5_000, 10_000] as const;
 
@@ -106,6 +114,8 @@ export function campaignFrom(post: PostItem, rule: CouponRule, nowMs: number): I
     startsAt: nowMs - 3_600_000,
     endsAt: nowMs + 6 * 3_600_000,
     status: 'live',
+    followerOnly: rule.followerOnly,
+    sendIntervalSeconds: rule.sendIntervalSeconds,
   };
 }
 
@@ -164,7 +174,16 @@ export class CouponDesk {
 
   deadLetters: DeadLetterView[] = [];
 
-  ingest: IngestReport = { received: 0, accepted: 0, enqueued: 0, ignored: 0, duplicates: 0, abuseBlocked: 0, noSignature: 0 };
+  ingest: IngestReport = {
+    received: 0,
+    accepted: 0,
+    enqueued: 0,
+    ignored: 0,
+    duplicates: 0,
+    abuseBlocked: 0,
+    noSignature: 0,
+    nonFollower: 0,
+  };
 
   dispatch: DispatchCycleReport = {
     claimed: 0,
@@ -234,7 +253,16 @@ export class CouponDesk {
     this.dms = [];
     this.deadLetters = [];
     this.pendingTokens.clear();
-    this.ingest = { received: 0, accepted: 0, enqueued: 0, ignored: 0, duplicates: 0, abuseBlocked: 0, noSignature: 0 };
+    this.ingest = {
+      received: 0,
+      accepted: 0,
+      enqueued: 0,
+      ignored: 0,
+      duplicates: 0,
+      abuseBlocked: 0,
+      noSignature: 0,
+      nonFollower: 0,
+    };
     this.dispatch = { claimed: 0, dispatched: 0, retried: 0, deadLettered: 0, late: 0, slaCompliance: 1, worstLatencyMs: 0 };
     this.storm = null;
     this.dispatcher = this.createDispatcher();
@@ -245,7 +273,16 @@ export class CouponDesk {
     this.dms = [];
     this.deadLetters = [];
     this.pendingTokens.clear();
-    this.ingest = { received: 0, accepted: 0, enqueued: 0, ignored: 0, duplicates: 0, abuseBlocked: 0, noSignature: 0 };
+    this.ingest = {
+      received: 0,
+      accepted: 0,
+      enqueued: 0,
+      ignored: 0,
+      duplicates: 0,
+      abuseBlocked: 0,
+      noSignature: 0,
+      nonFollower: 0,
+    };
     this.dispatch = {
       claimed: 0,
       dispatched: 0,
@@ -272,7 +309,12 @@ export class CouponDesk {
   }
 
   /** Build the webhook body the platform would POST, and sign it like Meta does. */
-  buildWebhook(text: string, authorRef: string, handle: string): { body: string; header: string; payload: unknown } {
+  buildWebhook(
+    text: string,
+    authorRef: string,
+    handle: string,
+    isFollower: boolean | null = null,
+  ): { body: string; header: string; payload: unknown } {
     const body = JSON.stringify({
       object: 'instagram',
       entry: [
@@ -285,7 +327,7 @@ export class CouponDesk {
               value: {
                 id: `cmt_${this.now()}_${this.seq + 1}`,
                 text,
-                from: { id: authorRef, username: handle },
+                from: { id: authorRef, username: handle, is_follower: isFollower },
                 // The media id is what binds a comment to one post's rule.
                 media: { id: this.post.id, media_product_type: this.post.productType },
               },
@@ -301,7 +343,14 @@ export class CouponDesk {
    * One comment in, one webhook delivery out.
    * `reuseAuthor` reproduces the flood case: the same account commenting again.
    */
-  async submitComment(input: { text: string; handle?: string; reuseAuthor?: boolean; newAccount?: boolean }): Promise<void> {
+  async submitComment(input: {
+    text: string;
+    handle?: string;
+    reuseAuthor?: boolean;
+    newAccount?: boolean;
+    /** 이 데모 댓글 작성자가 팔로워인지. 비우면 '모름'(null). */
+    isFollower?: boolean | null;
+  }): Promise<void> {
     const at = this.now();
     let authorRef: string;
     let handle: string;
@@ -317,7 +366,7 @@ export class CouponDesk {
       this.handles.set(authorRef, handle);
     }
 
-    const { body, header, payload } = this.buildWebhook(input.text, authorRef, handle);
+    const { body, header, payload } = this.buildWebhook(input.text, authorRef, handle, input.isFollower ?? null);
     const signatureProblem = this.dispatcher.verifySignature(body, header, APP_SECRET);
     const report = await this.dispatcher.ingest(payload, { signatureValid: signatureProblem === null });
 
@@ -329,6 +378,7 @@ export class CouponDesk {
       duplicates: this.ingest.duplicates + report.duplicates,
       abuseBlocked: this.ingest.abuseBlocked + report.abuseBlocked,
       noSignature: this.ingest.noSignature + report.noSignature,
+      nonFollower: this.ingest.nonFollower + report.nonFollower,
     };
 
     if (report.abuseBlocked > 0) {
@@ -341,6 +391,14 @@ export class CouponDesk {
       });
     } else if (report.duplicates > 0) {
       this.push({ at, kind: 'duplicate', handle, text: input.text, detail: '같은 댓글이 다시 들어와 한 번만 처리했습니다.' });
+    } else if (report.nonFollower > 0) {
+      this.push({
+        at,
+        kind: 'ignored',
+        handle,
+        text: input.text,
+        detail: '팔로워가 확인되지 않아 보내지 않았습니다. 팔로워 전용 규칙에서는 확인된 사람에게만 DM이 갑니다.',
+      });
     } else if (report.ignored > 0) {
       this.push({
         at,
