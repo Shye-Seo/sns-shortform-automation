@@ -3,7 +3,11 @@ import type { CtaGoal, Language } from '../types/script';
 import type { BlogPlatform, TopicProfile } from '../types/plan';
 import type { SceneDraft } from './scriptEngine';
 import { classifyTopic } from './topicProfile';
-import { TOPIC_BANKS } from './topicBanks';
+import {
+  SCRIPT_DOMAIN_TAGS,
+  SCRIPT_DOMAIN_TITLE_SUFFIX,
+  classifyScriptDomain,
+} from './scriptDomains';
 import { PATTERN_BY_CHANNEL } from './patternLibrary';
 
 /**
@@ -109,15 +113,37 @@ export interface OsmuConversion {
   engineDetail: string;
 }
 
+/**
+ * 글자 수 상한에서 자를 때는 **낱말 경계**에서 자른다.
+ * 30초 프리셋 검수에서 `…정작 하루는 더 흐트…`처럼 낱말 중간이 잘려 읽기 나빴다.
+ * 공백·쉼표가 없으면 어쩔 수 없이 글자로 자르되, 조사 하나만 남기는 일은 피한다.
+ */
 function clip(text: string, max: number): string {
   const clean = text.replace(/\s+/g, ' ').trim();
-  return clean.length <= max ? clean : `${clean.slice(0, Math.max(1, max - 1)).trimEnd()}…`;
+  if (clean.length <= max) return clean;
+  const cut = clean.slice(0, Math.max(1, max - 1));
+  const boundary = Math.max(cut.lastIndexOf(' '), cut.lastIndexOf(','), cut.lastIndexOf('·'));
+  if (boundary > Math.max(6, max * 0.45)) {
+    const head = cut.slice(0, boundary).trim().replace(/[,·]$/u, '').trim();
+    return `${head}…`;
+  }
+  return `${cut.trimEnd()}…`;
 }
 
+/** 문장 하나를 상한에 맞춰 자른다. 첫 문장이 짧으면 그대로 쓴다. */
 function firstClause(text: string, max = 30): string {
   const sentence = text.split(/(?<=[.!?])\s/)[0] ?? text;
   const clean = sentence.replace(/[.!?]$/, '').trim();
-  return clean.length <= max ? clean : `${clean.slice(0, Math.max(1, max - 1)).trimEnd()}…`;
+  if (clean.length <= max) return clean;
+  return clip(clean, max);
+}
+
+/** 제목이 훅과 같을 때 설명에 쓸 다음 문장(훅 다음 문장, 없으면 문제). */
+function secondClause(hook: string, problem: string, max: number): string {
+  const sentences = hook.split(/(?<=[.!?])\s+/).slice(1).join(' ').trim();
+  const source = sentences !== '' ? sentences : problem;
+  if (source.trim() === '') return firstClause(hook, max);
+  return firstClause(source, max);
 }
 
 function timecode(seconds: number): string {
@@ -158,10 +184,14 @@ export function buildBeatTimeline(
   });
 }
 
-/** 주제은행에서 키워드를 가져와 해시태그로 만든다(공백 제거, 중복 제거). */
+/**
+ * 해시태그는 주제 도메인에서 만든다(공백 제거, 중복 제거).
+ * 예전에는 카테고리 은행 키워드를 썼는데, "퇴사한 30대 개발자의 일상"에
+ * `#포트폴리오 #결과한줄 #첫문장`이 붙어서 주제와 태그가 어긋났다.
+ */
 export function buildHashtags(profile: TopicProfile, limit: number): string[] {
-  const bank = TOPIC_BANKS[profile.category];
-  const raw = [profile.core, ...(bank?.keywords ?? []), profile.category, '정보공유', '일상기록'];
+  const domain = classifyScriptDomain(profile.topic);
+  const raw = [profile.core, ...SCRIPT_DOMAIN_TAGS[domain.id], '숏폼'];
   const tags: string[] = [];
   const seen = new Set<string>();
   for (const word of raw) {
@@ -318,6 +348,7 @@ export function convertToOsmu(input: OsmuInput): OsmuConversion {
   const language = input.language ?? 'ko';
   const topic = input.topic.replace(/\s+/g, ' ').trim();
   const profile = classifyTopic(topic, language);
+  const domain = classifyScriptDomain(topic, language);
   const scenes = input.scenes.filter((scene) => scene.narration.trim().length > 0);
   const beats = buildBeatTimeline(scenes, {
     durationSec: input.durationSec,
@@ -341,10 +372,12 @@ export function convertToOsmu(input: OsmuInput): OsmuConversion {
   /* ── 1. 인스타그램 릴스 캡션 ─────────────────────────────── */
   const reelsTags = buildHashtags(profile, OSMU_LIMITS.reelsHashtagMax);
   const stepLines = steps.map((step, index) => `${index + 1}. ${step}`).join('\n');
+  // 문제 문장 앞에 "가기 전에 / 고르기 전에"를 붙이면 "가기 전에 전포는…"처럼 겹쳐 읽혔다.
+  // 접두어 없이 문장을 그대로 두는 쪽이 모든 도메인에서 자연스럽다.
   const reelsText = [
     firstClause(hook, 60),
     '',
-    problem ? `왜 막히는지: ${problem}` : '',
+    problem,
     '',
     stepLines,
     '',
@@ -370,10 +403,16 @@ export function convertToOsmu(input: OsmuInput): OsmuConversion {
   };
 
   /* ── 2. 유튜브 쇼츠 설명 ────────────────────────────────── */
-  const shortsTitle = clip(
-    hook.length <= OSMU_LIMITS.shortsTitle ? hook.replace(/[?.!]$/, '') : `${profile.subject} ${steps.length}단계`,
-    OSMU_LIMITS.shortsTitle,
-  );
+  const shortTitleCandidate =
+    hook.length <= OSMU_LIMITS.shortsTitle
+      ? hook.replace(/[?.!]$/, '')
+      : `${profile.subject} ${SCRIPT_DOMAIN_TITLE_SUFFIX[domain.id]}`;
+  const shortsTitle = clip(shortTitleCandidate, OSMU_LIMITS.shortsTitle);
+  // 제목이 훅 그 자체면 설명 첫 줄에서 같은 문장을 또 쓰지 않는다.
+  const shortsSummary =
+    shortsTitle === hook.replace(/[?.!]$/, '')
+      ? secondClause(hook, problem, 90)
+      : `${firstClause(hook, 50)}${problem ? ` ${firstClause(problem, 60)}` : ''}`.trim();
   const shortsTags = buildHashtags(profile, OSMU_LIMITS.shortsHashtagMax);
   const timeline = beats
     .map((beat) => `${timecode(beat.startSec)} ${beat.label} — ${firstClause(beat.narration, 34)}`)
@@ -381,7 +420,7 @@ export function convertToOsmu(input: OsmuInput): OsmuConversion {
   const shortsText = [
     shortsTitle,
     '',
-    `${firstClause(hook, 50)}${problem ? ` ${firstClause(problem, 60)}` : ''}`.trim(),
+    shortsSummary,
     '',
     '타임라인',
     timeline,
@@ -407,8 +446,9 @@ export function convertToOsmu(input: OsmuInput): OsmuConversion {
 
   /* ── 3. 블로그 / 스레드 요약 포스트 ──────────────────────── */
   const summaryTags = buildHashtags(profile, 3);
-  const summaryTitle = clip(`${profile.subject} — ${steps.length}단계로 정리`, 55);
-  const summaryText = [
+  // "… 2단계로 정리"를 일상 브이로그에 붙이면 어색하다. 도메인마다 제목 꼬리를 바꾼다.
+  const summaryTitle = clip(`${profile.subject} ${SCRIPT_DOMAIN_TITLE_SUFFIX[domain.id]}`, 55);
+  const summaryHead = [
     summaryTitle,
     '',
     firstClause(hook, 60),
@@ -416,14 +456,28 @@ export function convertToOsmu(input: OsmuInput): OsmuConversion {
     problem ? `${problem}` : '',
     '',
     ...steps.map((step, index) => `${index + 1}) ${step}`),
+  ];
+  // 30초 대본은 문장이 적어 블로그 요약이 250자 아래로 내려간다(검수에서 FAIL).
+  // 빈 말로 채우지 않고, 영상의 시간 순서와 화면 자막 체크리스트를 덧붙인다.
+  // 둘 다 블로그에서 그대로 쓸 수 있는 정보라 글자 수를 채우는 용도로만 쓰이지 않는다.
+  const timelineBlock = [
     '',
-    cta,
-    '',
-    summaryTags.join(' '),
-  ]
-    .filter((line, index, all) => !(line === '' && (all[index - 1] === '' || index === 0)))
-    .join('\n')
-    .trim();
+    '영상 순서',
+    ...beats.map((beat) => `${timecode(beat.startSec)} ${beat.label}`),
+  ];
+  const screenLabels = scenes
+    .map((scene) => (scene.onScreenText ?? '').trim())
+    .filter((label) => label !== '');
+  const checklistBlock = screenLabels.length > 0 ? ['', '화면에 남는 말', ...screenLabels.map((label) => `· ${label}`)] : [];
+  const buildSummary = (extra: string[]): string =>
+    [...summaryHead, ...extra, '', cta, '', summaryTags.join(' ')].join('\n').trim();
+
+  let extras: string[] = [];
+  for (const block of [timelineBlock, checklistBlock]) {
+    if (buildSummary(extras).length >= 250) break;
+    extras = [...extras, ...block];
+  }
+  const summaryText = buildSummary(extras);
   const threads = splitForThreads(summaryText);
 
   const summary: OsmuFormat = {

@@ -2,6 +2,7 @@ import { buildCues, computeDuckingEnvelope, sampleEnvelope } from '../../src/ser
 import { buildTimeline, fitDrafts, planTimeBudget, type SceneDraft, type TimeBudget } from '../../src/services/scriptEngine';
 import { badgeFor, resolveAngle, writeTopicDrafts } from '../../src/services/topicDraftWriter';
 import { classifyTopic } from '../../src/services/topicProfile';
+import { classifyScriptDomain, type ScriptDomainProfile } from '../../src/services/scriptDomains';
 import type { AngleChoice } from '../../src/types/plan';
 import { estimateAlignmentFor } from '../../src/services/tts';
 import { checkLayoutCollisions, planOverlayLayout } from '../../src/services/videoCompositor';
@@ -45,6 +46,8 @@ export interface StudioInput {
 export interface StudioModel {
   request: ScriptRequest;
   badgeText: string;
+  /** 주제를 어떤 말투·소재 도메인으로 읽었는지("일상·브이로그"). */
+  domain: ScriptDomainProfile;
   budget: TimeBudget;
   scenes: Scene[];
   compression: CompressionReport;
@@ -126,6 +129,7 @@ export function buildStudioModel(input: StudioInput): StudioModel {
   const drafts =
     input.drafts.length >= 4 ? input.drafts : draftBeatScene(input.topic, input.durationSec, variation, angle);
   const profile = classifyTopic(input.topic);
+  const domain = classifyScriptDomain(input.topic, input.language);
   const badgeText = input.badgeText ?? badgeFor(profile);
   const budget = planTimeBudget({
     targetDurationSec: request.targetDurationSec,
@@ -209,6 +213,7 @@ export function buildStudioModel(input: StudioInput): StudioModel {
   return {
     request,
     badgeText,
+    domain,
     budget,
     scenes: timeline.scenes,
     compression,
