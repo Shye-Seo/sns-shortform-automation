@@ -354,7 +354,7 @@ export function buildCues(words: WordTiming[], options: CueBuildOptions = {}): C
         const tail = [...previous.slice(previous.length - move), ...group];
         if (head.length < 2 || tail.length < 2 || !canDraw(head) || !canDraw(tail)) continue;
         const lastWord = head[head.length - 1] as WordTiming;
-        options.push({ head, tail, comma: /,$/u.test(lastWord.punctuation) || /,$/u.test(lastWord.text) });
+        options.push({ head, tail, comma: /,$/u.test(lastWord.text) });
       }
       const chosen = options.find((option) => option.comma) ?? options[0];
       if (chosen) {
