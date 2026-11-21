@@ -1,6 +1,6 @@
 <p align="center">
   <a href="https://github.com/Shye-Seo/sns-shortform-automation/actions/workflows/ci.yml"><img alt="CI Pipeline" src="https://github.com/Shye-Seo/sns-shortform-automation/actions/workflows/ci.yml/badge.svg" /></a>
-  <img alt="Tests" src="https://img.shields.io/badge/tests-750_(Vitest_565_%C2%B7_PHPUnit_185)-2E7D32?style=flat-square" />
+  <img alt="Tests" src="https://img.shields.io/badge/tests-751_(Vitest_566_%C2%B7_PHPUnit_185)-2E7D32?style=flat-square" />
   <img alt="Web demo" src="https://img.shields.io/badge/web_demo-live_(GitHub_Pages)-13315C?style=flat-square" />
 </p>
 
@@ -12,7 +12,7 @@
 그것을 **수십 개 테넌트 · 수백 편 · 플랫폼 쿼터 안에서** 안정적으로 운영하는 것은
 완전히 다른 문제입니다. 이 저장소는 대규모 배포 환경의 안정성과 확장성 문제를 풉니다.
 
-`TypeScript` · `Node.js 20` · `ffmpeg` · `Vitest 565 tests` · `커버리지 89.7%`
+`TypeScript` · `Node.js 20` · `ffmpeg` · `Vitest 566 tests` · `커버리지 89.7%`
 `PHP 8.2` · `MySQL 8.0` · `Meta Graph API` · `NCP SENS 알림톡` · `PHPUnit 185 tests`
 
 | 계층 | 무엇을 보장하나 |
@@ -27,7 +27,7 @@
 | **서버 계층(DB·API)** | MySQL 8.0 기반 작업 원장 보존 및 PHP 백엔드 워커의 `SKIP LOCKED` 기반 동시성 경합 없는 작업 선점 |
 
 ```bash
-npm ci && npm run verify      # 565 tests, 네트워크·ffmpeg 없이
+npm ci && npm run verify      # 566 tests, 네트워크·ffmpeg 없이
 npm run cli -- studio         # 터미널 데모 콘솔
 npm run dev:web               # 브라우저 콘솔 → http://127.0.0.1:4173
 ```
@@ -615,7 +615,7 @@ npm run cli -- crosschannel --topic "냉장고 재료로 10분 저녁" --llm --o
 ## 12. 검증
 
 ```bash
-npm run verify    # typecheck + typecheck:web + lint + 565 tests
+npm run verify    # typecheck + typecheck:web + lint + 566 tests
 npm run coverage  # 89.7% statements · 81.9% branches
 ```
 
@@ -631,10 +631,10 @@ npm run coverage  # 89.7% statements · 81.9% branches
 | 콘솔/API (스냅샷·HTML 이스케이프·라우팅) | `studio.test.ts` | 19 |
 | **Redis 큐 (WATCH 원자성·6노드 경합·지연 승격·lease 회수·드라이버 선택)** | `redisAdapter.test.ts` | **24** |
 | **시계열 메트릭 (차분·링버퍼·토큰 합계·차트 기하·SVG 이스케이프·데모 이력)** | `metricsTimeSeries.test.ts` · `metricsChart.test.tsx` | **21 + 3** |
-| 기존 파이프라인 (대본·자막·더킹·렌더·게시) | 8개 파일 | 147 |
+| 기존 파이프라인 (대본·자막·더킹·렌더·게시) | 8개 파일 | 148 |
 | 해시 원시함수 (SHA-1·SHA-256·HMAC 벡터 + `node:crypto` 대조) | `hash.test.ts` | 9 |
 | 웹 콘솔 모델 (타임라인·더킹·게시물별 댓글 규칙·쿼터·A/B 시나리오·표시 문구) | `webModels.test.ts` | 18 |
-| 웹 콘솔 클릭 (jsdom: 패널 전환·댓글→DM→수령·게시물 규칙 적용·쿼터 중단·OSMU 탭·훅 패턴 표) | `webConsole.test.tsx` | 9 |
+| 웹 콘솔 클릭 (jsdom: 패널 전환·댓글→DM→수령·게시물 규칙 적용·쿼터 중단·OSMU 탭·훅 패턴 표·도메인/편집 패키지·발행 전 점검·팔로워 규칙) | `webConsole.test.tsx` | 12 |
 | **OSMU 변환 (대본→3포맷·글자 상한·해시태그 규칙·스레드 분할·훅 경고)** | `osmu.test.ts` | **12** |
 | **훅 패턴 비교 (기준선·카테고리 배수·훅 길이 감점·리더 판정)** | `hookPatternSim.test.ts` | **9** |
 | **쿼터 인지 발행 계획 (창 경계·예산 소진·우선순위·슬롯·최소 간격·지평 넘김)** | `quotaPlanner.test.ts` | **22** |
@@ -646,7 +646,7 @@ npm run coverage  # 89.7% statements · 81.9% branches
 | **편집 패키지 (SRT 시간·CSV 인용·ZIP 중앙디렉터리/CRC·파일명 정리)** | `editPackage.test.ts` | **7** |
 | **발행 전 점검 (규제·금칙 표현·개인정보·9:16 안전영역·상한·정상 대본 오탐 0)** | `compliance.test.ts` | **7** |
 | **팔로워 전용·슬로우 큐 (확인 안 됨 차단·예산 미소모·간격/데드라인 이동)** | `couponAudience.test.ts` | **8** |
-| **합계** | 33개 파일 | **565** |
+| **합계** | 33개 파일 | **566** |
 
 네트워크·ffmpeg 없이 전부 통과합니다. 외부 API는 fake HTTP와 주입된 리프레셔로,
 재시도는 주입된 시계·sleep으로 검증합니다.
@@ -658,7 +658,7 @@ npm run coverage  # 89.7% statements · 81.9% branches
 
 | 검수 항목 | 실행 | 결과 |
 |-----------|------|------|
-| 타입·린트·단위 테스트 | `npm run verify` | ✅ 33개 파일 565건 통과 |
+| 타입·린트·단위 테스트 | `npm run verify` | ✅ 33개 파일 566건 통과 |
 | 커버리지 | `npm run coverage` | 89.70% statements · 81.92% branches |
 | 실제 렌더 | `craft → review --approve → render --execute` (ffmpeg 7.0.2) | ✅ 1080×1920 · 33.13s · 1.2MB · 프리플라이트 12/13(경고 1) |
 | 큐·워커 | `queue run --jobs 11 --concurrency 3 --fail-every 7` | ✅ 시도 13 · 성공 10 · DLQ 1 · 최대 동시 워커 3 |
@@ -768,7 +768,7 @@ platform built on a working 60-second shortform pipeline.
   (`.csv`/`.txt`) inside a store-only ZIP written in the browser (CRC-32, UTF-8 names).
 - **Pre-publish scan** — regulated/absolute claims, personal data and 9:16 safe-area overflow
   (caption width, platform-UI collisions) block the publish button before upload.
-- **Verification** — 565 Vitest cases, 89.7% statement coverage, no network and no ffmpeg
+- **Verification** — 566 Vitest cases, 89.7% statement coverage, no network and no ffmpeg
   required (injected clock, RNG, sleep, HTTP and token refresher); 185 PHPUnit cases over
   MySQL 8.0 with 0 skips.
 
@@ -1410,6 +1410,7 @@ A/B 카드는 "이미 노출을 쓴 뒤"의 질문에 답한다. 이 표는 그 
 | 일상 주제에 `#포트폴리오 #첫문장` | 태그를 옛 카테고리 은행에서 가져옴 | 도메인 태그로 교체 |
 | 요약 제목 `… — 2단계로 정리` | 모든 도메인에 같은 꼬리 | 도메인별 꼬리(기록·코스·리스트·후기·조건…) |
 | `가기 전에 전포는 …` | 문제 문장 앞에 접두어를 붙임 | 접두어 없이 문장 그대로 |
+| 훅 자막이 `…세우지` + `마세요`로 갈라져 한 낱말 카드가 생김 | 2줄 상한 때문에 앞 카드에 접을 수 없음 | 앞 카드에서 낱말을 옮겨 두 카드 모두 두 낱말 이상이 되게 재분배(`buildCues` pass 4) |
 
 `tests/osmu30.test.ts`가 12개 도메인 × 3포맷을 한 번에 돌려 위 항목을 모두 다시 검사합니다.
 

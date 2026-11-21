@@ -146,6 +146,26 @@ describe('cue grouping', () => {
     }
   });
 
+  it('rebalances instead of leaving a one-word card when folding does not fit', () => {
+    // 훅 한 문장: "개발자의 일상, 계획부터 세우지 마세요" (2줄 상한).
+    // 통째로 접으면 3줄이 되어 접을 수 없다. 그때 마지막 한 낱말만 남기지 않고
+    // 앞 카드에서 낱말을 옮겨 두 카드 모두 두 낱말 이상이 되게 한다.
+    const hook = words([
+      ['개발자의', 0, 0.38],
+      ['일상,', 0.38, 0.76],
+      ['계획부터', 0.8, 1.3],
+      ['세우지', 1.3, 1.9],
+      ['마세요', 1.9, 2.9],
+    ]);
+    const cues = buildCues(hook, { maxWidthPx: 760 });
+    expect(cues.length).toBeGreaterThanOrEqual(2);
+    for (const cue of cues) {
+      expect(cue.words.length).toBeGreaterThanOrEqual(2);
+    }
+    // 첫 카드가 낱말 하나로 남지 않는다.
+    expect(cues[0]?.lines.join(' ').trim()).not.toBe('개발자의');
+  });
+
   it('maps words onto the lines they are drawn on', () => {
     const wrapped = wrapCueWords(
       words([['주방수납', 0, 0.7], ['하나만', 0.7, 1.2], ['바꾸면', 1.2, 1.7], ['됩니다', 1.7, 2.2]]),

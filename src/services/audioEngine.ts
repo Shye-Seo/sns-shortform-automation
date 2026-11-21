@@ -327,7 +327,41 @@ export function buildCues(words: WordTiming[], options: CueBuildOptions = {}): C
     balanced.push(group);
   }
 
-  return balanced.map((group, index) => {
+  // Pass 4 — when folding is impossible, move words from the previous card into
+  // the short one instead of leaving "마세요" alone on screen. Two lines of
+  // "개발자의 일상, / 계획부터 세우지" + "마세요" reads much worse than
+  // "개발자의 일상," + "계획부터 세우지 마세요". Words move as a block, so a
+  // phrase boundary is kept; the largest move that both cards can draw wins.
+  const rebalanced: WordTiming[][] = [];
+  for (const group of balanced) {
+    const previous = rebalanced[rebalanced.length - 1];
+    if (previous && group.length === 1 && previous.length > 2) {
+      const canDraw = (words: WordTiming[]): boolean => {
+        if (words.length === 0) return false;
+        const duration = (words[words.length - 1] as WordTiming).endSec - (words[0] as WordTiming).startSec;
+        const text = cueText(words);
+        const cps = duration > 0 ? text.length / duration : Number.POSITIVE_INFINITY;
+        return fitsBox(words) && duration <= config.maxCueSec + 0.3 && cps <= config.maxCps * 1.15;
+      };
+      let applied = false;
+      // 두 카드 모두 최소 두 낱말을 갖도록 움직인다. 한 낱말만 남기는 재분배는
+      // 없던 고아 카드를 새로 만든다("개발자의" / "일상, 계획부터 세우지 마세요").
+      for (let move = previous.length - 2; move >= 1; move -= 1) {
+        const head = previous.slice(0, previous.length - move);
+        const tail = [...previous.slice(previous.length - move), ...group];
+        if (head.length >= 2 && tail.length >= 2 && canDraw(head) && canDraw(tail)) {
+          rebalanced[rebalanced.length - 1] = head;
+          rebalanced.push(tail);
+          applied = true;
+          break;
+        }
+      }
+      if (applied) continue;
+    }
+    rebalanced.push(group);
+  }
+
+  return rebalanced.map((group, index) => {
     const text = cueText(group);
     let lines = wrapText(text, {
       maxWidthPx,
