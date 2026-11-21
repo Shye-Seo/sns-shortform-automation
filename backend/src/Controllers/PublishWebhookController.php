@@ -73,6 +73,22 @@ final class PublishWebhookController
         if (!is_array($payload)) {
             throw new BadRequestException('Webhook body is not JSON.');
         }
+
+        return $this->apply($payload);
+    }
+
+    /**
+     * Apply an already-verified payload.
+     *
+     * Split from receive() so one HTTP body can carry both media and comment changes without
+     * verifying the signature twice (the combined controller verifies once, then hands the
+     * same array to the publishing and comment paths).
+     *
+     * @param array<string,mixed> $payload
+     * @return array{received:int, applied:int, duplicates:int, unknown_media:int, ignored:int}
+     */
+    public function apply(array $payload): array
+    {
         if (($payload['object'] ?? '') !== 'instagram') {
             // Other object types can be subscribed to the same app; ignore them, do not fail.
             return ['received' => 0, 'applied' => 0, 'duplicates' => 0, 'unknown_media' => 0, 'ignored' => 1];
@@ -90,7 +106,13 @@ final class PublishWebhookController
             $entryTime = (string) ($entry['time'] ?? '');
 
             foreach ((array) ($entry['changes'] ?? []) as $change) {
-                if (($change['field'] ?? '') !== 'media') {
+                $field = (string) ($change['field'] ?? '');
+                if ($field === 'comments') {
+                    // Routed to InteractiveCouponDispatcher (comment → DM coupon). Counting it
+                    // as "ignored" here made the old response look like the event was dropped.
+                    continue;
+                }
+                if ($field !== 'media') {
                     $ignored++;
                     continue;
                 }

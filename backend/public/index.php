@@ -10,7 +10,9 @@ declare(strict_types=1);
  * Routes
  *   GET  /health                              liveness + which integrations are configured
  *   GET  /webhooks/instagram                  Meta verification (returns the raw challenge)
- *   POST /webhooks/instagram                  Meta events (X-Hub-Signature-256 verified)
+ *   POST /webhooks/instagram                  Meta events: media (publish) + comments (coupon)
+ *   GET  /c/{token}                           one-time coupon link (claim result as JSON)
+ *   POST /api/v1/coupons/claim                same claim from an app/webview (JSON body)
  *   GET  /api/v1/tenants/{tenant_id}/queue    queue counts per state
  *   GET  /api/v1/tenants/{tenant_id}/publish  publish stats per status
  *   POST /api/v1/projects/{project_id}/publish  orchestrated publish (container → publish)
@@ -18,8 +20,9 @@ declare(strict_types=1);
 
 require __DIR__ . '/../vendor/autoload.php';
 
-use Shortform\Controllers\PublishWebhookController;
+use Shortform\Bootstrap\CouponServices;
 use Shortform\Database\Connection;
+use Shortform\Domain\Interactive\ClaimResult;
 use Shortform\Domain\Platform;
 use Shortform\Http\BadRequestException;
 use Shortform\Http\JsonResponse;
@@ -27,7 +30,6 @@ use Shortform\Http\Request;
 use Shortform\Http\Router;
 use Shortform\Http\WebhookRejected;
 use Shortform\Repositories\ShortformRepository;
-use Shortform\Security\MetaWebhookSignatureVerifier;
 use Shortform\Sens\SensConfig;
 use Shortform\Services\DisabledAlertNotifier;
 use Shortform\Services\InstagramConfig;
@@ -77,12 +79,15 @@ try {
         )
         : new DisabledAlertNotifier();
 
-    $webhook = new PublishWebhookController(
-        $repository,
-        Env::get('IG_VERIFY_TOKEN', '') ?? '',
-        new MetaWebhookSignatureVerifier(Env::get('IG_APP_SECRET', '') ?? ''),
-        $clock,
-    );
+    $coupon = CouponServices::fromEnv($connection, $clock, $http);
+    $webhook = $coupon->instagramWebhook($repository, $clock);
+
+    $claimPayload = static fn (ClaimResult $result): array => [
+        'outcome' => $result->outcome,
+        'reason' => $result->reason,
+        'reward_amount' => $result->rewardAmount,
+        'granted' => $result->isGranted(),
+    ];
 
     $router = new Router();
     $router->get('/health', static fn (): array => [
@@ -92,10 +97,25 @@ try {
         'integrations' => [
             'alimtalk' => $sensConfigured ? 'enabled' : 'disabled(no SENS credentials)',
             'instagram' => Env::get('IG_ACCESS_TOKEN') !== null ? 'enabled' : 'disabled(no IG token)',
+            'coupon_webhook' => 'enabled(POST /webhooks/instagram → comments)',
+            'coupon_worker' => 'enabled(bin/coupon-worker.php)',
+            'coupon_claim' => 'enabled(GET /c/{token})',
+            'coupon_sender' => Env::get('COUPON_SENDER', 'dryrun') ?? 'dryrun',
         ],
     ]);
     $router->get('/webhooks/instagram', static fn (Request $r): string => $webhook->verify($r));
     $router->post('/webhooks/instagram', static fn (Request $r): array => $webhook->receive($r));
+    $router->get('/c/{token}', static fn (Request $r, array $p): array => $claimPayload(
+        $coupon->dispatcher->claim((string) $p['token'], $r->clientIp)
+    ));
+    $router->post('/api/v1/coupons/claim', static function (Request $r) use ($coupon, $claimPayload): array {
+        $token = (string) ($r->json['token'] ?? '');
+        if ($token === '') {
+            throw new BadRequestException('token is required.');
+        }
+
+        return $claimPayload($coupon->dispatcher->claim($token, $r->clientIp));
+    });
     $router->get('/api/v1/tenants/{tenant_id}/queue', static fn (Request $r, array $p): array => [
         'tenant_id' => (int) $p['tenant_id'],
         'counts' => $repository->countsByState((int) $p['tenant_id']),

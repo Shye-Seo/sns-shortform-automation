@@ -13,6 +13,7 @@ use Shortform\Domain\Interactive\WebhookComment;
 use Shortform\Domain\Interactive\WebhookHandlingResult;
 use Shortform\Repositories\CampaignCatalog;
 use Shortform\Repositories\ClaimTokenStore;
+use Shortform\Repositories\DispatchAttemptStore;
 use Shortform\Repositories\DispatchQueueStore;
 use Shortform\Repositories\InteractionEventStore;
 use Shortform\Repositories\NotificationSender;
@@ -53,6 +54,7 @@ final class InteractiveCouponDispatcher
         private readonly int $slaSeconds = 5,
         private readonly int $maxAttempts = 5,
         private readonly string $deepLinkBase = 'https://coupon.shye.kr/c',
+        private readonly ?DispatchAttemptStore $attempts = null,
     ) {
     }
 
@@ -70,7 +72,7 @@ final class InteractiveCouponDispatcher
             return new WebhookHandlingResult(false, $counts, 'BAD_SIGNATURE');
         }
 
-        $comments = $this->parse($payload);
+        $comments = $this->parse($payload, $clientIp);
         if ($comments === []) {
             return new WebhookHandlingResult(true, $counts, 'NO_COMMENTS');
         }
@@ -148,6 +150,9 @@ final class InteractiveCouponDispatcher
                     'campaignCode' => $campaign->code,
                     'rewardLabel' => $campaign->rewardLabel,
                     'rewardAmount' => $campaign->rewardAmount,
+                    // Private reply needs the comment id, not the author id. Keeping it here
+                    // means the worker does not have to look the comment up again.
+                    'commentId' => $comment->externalEventId,
                 ],
                 now: $now,
             );
@@ -167,12 +172,12 @@ final class InteractiveCouponDispatcher
     /**
      * Worker pass: claim due jobs, mint a one-time token, send, record the outcome.
      */
-    public function dispatchPending(int $limit = 50): DispatchReport
+    public function dispatchPending(int $limit = 50, ?string $workerId = null): DispatchReport
     {
         $now = $this->clock->now();
-        $jobs = $this->queue->claimReady($now, $limit);
+        $jobs = $this->queue->claimReady($now, $limit, $workerId);
 
-        $counts = ['dispatched' => 0, 'retried' => 0, 'deadLettered' => 0, 'late' => 0];
+        $counts = ['dispatched' => 0, 'retried' => 0, 'deadLettered' => 0, 'late' => 0, 'recovered' => 0];
         $worstLatency = 0.0;
 
         foreach ($jobs as $job) {
@@ -192,21 +197,49 @@ final class InteractiveCouponDispatcher
                 continue;
             }
 
+            // A previous worker may have sent and died before marking the row. The SENT
+            // attempt proves the DM left; finish the state instead of sending a second one.
+            if ($this->attempts !== null && $this->attempts->sentAttempt($job->id) !== null) {
+                $this->queue->markDispatched($job->id, $now);
+                $this->events->markStatus($job->eventId, 'DISPATCHED', null, $now);
+                $counts['recovered']++;
+                continue;
+            }
+
             $token = $this->mintToken($campaign, $job, $now);
+            if ($token['id'] !== null) {
+                $this->queue->attachToken($job->id, $token['id']);
+            }
             $startedAt = microtime(true);
 
-            $result = $this->sender->send($job->channel, $job->recipientRef, [
+            $message = [
                 'templateCode' => 'shortform_claim_v1',
                 'deepLink' => rtrim($this->deepLinkBase, '/') . '/' . rawurlencode($token['plain']),
                 'rewardLabel' => $campaign->rewardLabel,
                 'campaignCode' => $campaign->code,
-            ]);
+            ];
+
+            $result = $this->sender->send($job->channel, $job->recipientRef, $message);
 
             $latency = $result->latencyMs > 0 ? $result->latencyMs : (microtime(true) - $startedAt) * 1000;
             $worstLatency = max($worstLatency, $latency + $token['elapsedMs']);
 
+            $this->attempts?->record(
+                dispatchId: $job->id,
+                campaignId: $job->campaignId,
+                claimTokenId: $token['id'],
+                channel: $job->channel,
+                provider: $result->provider,
+                attemptNo: $job->attempts + 1,
+                recipientRef: $job->recipientRef,
+                result: $result,
+                requestPayload: ['deepLink' => $message['deepLink'], 'templateCode' => $message['templateCode']],
+                now: $now,
+            );
+
             if ($result->ok) {
                 $this->queue->markDispatched($job->id, $now);
+                $this->events->markStatus($job->eventId, 'DISPATCHED', null, $now);
                 $counts['dispatched']++;
                 continue;
             }
@@ -270,7 +303,7 @@ final class InteractiveCouponDispatcher
      * @param array<string,mixed> $payload
      * @return list<WebhookComment>
      */
-    public function parse(array $payload): array
+    public function parse(array $payload, ?string $clientIp = null): array
     {
         $now = $this->clock->now();
         $comments = [];
@@ -281,7 +314,12 @@ final class InteractiveCouponDispatcher
                     continue;
                 }
                 foreach ($entry['changes'] ?? [] as $change) {
-                    $value = is_array($change) ? ($change['value'] ?? null) : null;
+                    if (! is_array($change) || ($change['field'] ?? '') !== 'comments') {
+                        // media changes are handled by the publishing controller; anything else
+                        // (mentions, story_insights) is not a coupon trigger.
+                        continue;
+                    }
+                    $value = $change['value'] ?? null;
                     if (! is_array($value) || ! isset($value['id'])) {
                         continue;
                     }
@@ -293,6 +331,7 @@ final class InteractiveCouponDispatcher
                         authorHandleRef: isset($value['from']['username']) ? (string) $value['from']['username'] : null,
                         text: (string) ($value['text'] ?? ''),
                         receivedAt: $now,
+                        clientIp: $clientIp,
                     );
                 }
             }
@@ -322,7 +361,7 @@ final class InteractiveCouponDispatcher
     }
 
     /**
-     * @return array{plain:string, uuid:string, elapsedMs:float}
+     * @return array{plain:string, uuid:string, id:?int, elapsedMs:float}
      */
     private function mintToken(InteractiveCampaign $campaign, DispatchJob $job, \DateTimeImmutable $now): array
     {
@@ -332,7 +371,7 @@ final class InteractiveCouponDispatcher
         $plain = $uuid . '.' . $secret;
         $expiresAt = $now->modify("+{$campaign->tokenTtlMinutes} minutes");
 
-        $this->tokens->issue(new ClaimToken(
+        $tokenId = $this->tokens->issue(new ClaimToken(
             id: 0,
             campaignId: $campaign->id,
             dispatchId: $job->id,
@@ -347,7 +386,7 @@ final class InteractiveCouponDispatcher
             createdAt: $now,
         ));
 
-        return ['plain' => $plain, 'uuid' => $uuid, 'elapsedMs' => (microtime(true) - $startedAt) * 1000];
+        return ['plain' => $plain, 'uuid' => $uuid, 'id' => $tokenId, 'elapsedMs' => (microtime(true) - $startedAt) * 1000];
     }
 
     private function hasBudget(InteractiveCampaign $campaign): bool

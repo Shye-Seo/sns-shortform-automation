@@ -1,6 +1,6 @@
 <p align="center">
   <a href="https://github.com/Shye-Seo/sns-shortform-automation/actions/workflows/ci.yml"><img alt="CI Pipeline" src="https://github.com/Shye-Seo/sns-shortform-automation/actions/workflows/ci.yml/badge.svg" /></a>
-  <img alt="Tests" src="https://img.shields.io/badge/tests-641_(Vitest_516_%C2%B7_PHPUnit_125)-2E7D32?style=flat-square" />
+  <img alt="Tests" src="https://img.shields.io/badge/tests-691_(Vitest_516_%C2%B7_PHPUnit_175)-2E7D32?style=flat-square" />
   <img alt="Web demo" src="https://img.shields.io/badge/web_demo-live_(GitHub_Pages)-13315C?style=flat-square" />
 </p>
 
@@ -13,7 +13,7 @@
 완전히 다른 문제입니다. 이 저장소는 대규모 배포 환경의 안정성과 확장성 문제를 풉니다.
 
 `TypeScript` · `Node.js 20` · `ffmpeg` · `Vitest 516 tests` · `커버리지 88.8%`
-`PHP 8.2` · `MySQL 8.0` · `Meta Graph API` · `NCP SENS 알림톡` · `PHPUnit 125 tests`
+`PHP 8.2` · `MySQL 8.0` · `Meta Graph API` · `NCP SENS 알림톡` · `PHPUnit 175 tests`
 
 | 계층 | 무엇을 보장하나 |
 |------|------------------|
@@ -656,12 +656,14 @@ npm run coverage  # 88.8% statements · 81.5% branches
 | 커버리지 | `npm run coverage` | 88.79% statements · 81.46% branches |
 | 실제 렌더 | `craft → review --approve → render --execute` (ffmpeg 7.0.2) | ✅ 1080×1920 · 33.13s · 1.2MB · 프리플라이트 12/13(경고 1) |
 | 큐·워커 | `queue run --jobs 11 --concurrency 3 --fail-every 7` | ✅ 시도 13 · 성공 10 · DLQ 1 · 최대 동시 워커 3 |
-| MySQL 스키마 | `php bin/migrate.php --fresh --seed --verify` | ✅ 12개 테이블 · 인덱스·FK 확인 |
-| PHP 단위·통합 | `composer test` (MySQL 8.0.40 연결) | ✅ 125건 · 377 assertions (DB 없으면 112 + 13 skip) |
+| MySQL 스키마 | `php bin/migrate.php --fresh --seed --verify` | ✅ 13개 테이블 · 인덱스·FK 확인 |
+| PHP 단위·통합 | `composer test` (MySQL 8.0.40 연결) | ✅ 175건 · 578 assertions (DB 없으면 151 + 24 skip) |
 | 렌더 큐 워커 | `php bin/worker.php --once` | ✅ job #1 선점 → 완료 → 큐 현황 출력 |
 | HTTP 서버 | `php -S` 후 `/health`·웹훅 | ✅ `/health` 200, `GET /webhooks/instagram` 챌린지 반환, 서명 위조 403 |
 | 게시물 발행 웹훅 | 서명된 `media` 이벤트 전송 | ✅ `applied 1` 후 `publish_logs.status=published`, 재전송은 `duplicates 1` |
-| 댓글 웹훅 | 서명된 `comments` 이벤트 전송 | ⚠️ `ignored 1` — 댓글 분기가 없어 처리되지 않음(§17.8) |
+| 댓글 웹훅 | 서명된 `comments` 이벤트 전송 | ✅ `comments.enqueued 1` → `webhook_interaction_events.QUEUED` + `dispatch_queue.PENDING`, 서명 위조는 403 |
+| 댓글 워커 | `php bin/coupon-worker.php --once` | ✅ `sent=1` · 1회용 토큰 발급·큐 행 연결 · `dispatch_attempts` SENT(dry_run, message id) · 큐 `DISPATCHED` |
+| 쿠폰 수령 | `GET /c/{token}` 두 번 호출 | ✅ 1회 `GRANTED`(3,000원) → 2회 `ALREADY_CLAIMED`, DB `claim_count=1` |
 | 정적 웹 콘솔 | `npm run build:web` → 로컬 서버 | ✅ 탭 6개 렌더·클릭 동작, 콘솔 오류 0 |
 | 라이브 배포 | <https://shye-seo.github.io/sns-shortform-automation/> | ✅ HTTP 200 |
 
@@ -695,7 +697,7 @@ npm run coverage  # 88.8% statements · 81.5% branches
 | 항목 | 상태 |
 |------|------|
 | 큐 상태머신·재시도·DLQ·lease | ✅ 구현·테스트 (MySQL 8.0 `SKIP LOCKED` 기반 분산 큐 및 단일 프로세스 메모리 큐) |
-| MySQL 영속 큐 & PHP 백엔드 | ✅ Modern PHP 8.2 OOP + MySQL 8.0 DDL 12개 테이블 구현. MySQL 8.0.40에서 마이그레이션·워커·통합 테스트 125건 실행 확인 |
+| MySQL 영속 큐 & PHP 백엔드 | ✅ Modern PHP 8.2 OOP + MySQL 8.0 DDL 13개 테이블 구현. MySQL 8.0.40에서 마이그레이션·워커·통합 테스트 175건 실행 확인 |
 | 웹훅 수신 & 서명 검증 | ✅ Meta Graph API `X-Hub-Signature-256` HMAC-SHA256 (`hash_equals`) 보안 검증 미들웨어 구현·테스트 |
 | DLQ 콘솔 UI | ✅ 웹 콘솔 DLQ 재시도 및 폐기 인터페이스 (`POST /v1/queue/dlq/{id}/retry|discard`) 구현·테스트 |
 | 토큰 버킷·일일 쿼터·격리 | ✅ 구현·테스트 |
@@ -705,7 +707,7 @@ npm run coverage  # 88.8% statements · 81.5% branches
 | 콘솔/API | ✅ text·HTML·Prometheus·JSON 서빙 및 DLQ 액션 API 연동 |
 | 60초 렌더 파이프라인 | ✅ ffmpeg 실제 인코딩·프리플라이트 통과 (6.0 산출물, 7.0.2 재현 확인) |
 | 웹 데모 콘솔 (GitHub Pages) | ✅ 정적 번들이 엔진 모듈을 그대로 실행. Meta·YouTube·Redis·SENS 실호출은 없음 |
-| 인스타 댓글 웹훅 → PHP | ⚠️ 서비스 계층(`InteractiveCouponDispatcher.php`)과 저장소 인터페이스·단위 테스트는 있지만, **HTTP 라우트와 DB 어댑터가 아직 연결되지 않았습니다**. `/webhooks/instagram`은 지금 게시물 발행 알림(`media`)만 처리하고 댓글(`comments`)은 무시합니다. 연결에 필요한 것은 §17.8 |
+| 인스타 댓글 웹훅 → PHP | ✅ `POST /webhooks/instagram`이 `comments`를 서명 검증 후 `InteractiveCouponDispatcher`로 넘겨 MySQL 큐에 적재하고, `bin/coupon-worker.php`가 토큰 발급·발송·이력 기록까지 수행. `GET /c/{token}` 수령까지 로컬 MySQL 8.0.40에서 엔드투엔드 확인. 실 Meta DM·SENS 호출은 자격 증명이 없어 미검증(§17.8) |
 
 **로드맵**:
 - [x] MySQL 8.0 `SKIP LOCKED` 기반 분산 비동기 렌더 큐 백엔드 (PHP 8.2)
@@ -793,7 +795,7 @@ flowchart LR
 
 | 계층 | 무엇을 보장하나 |
 | --- | --- |
-| **DB (12 테이블)** | 1부 7개(큐·발행·알림) + 2부 5개(캠페인·웹훅 이벤트·발송 큐·1회용 토큰·전환). 큐 상태·lease·전이 이력·쿼터·알림 도달이 모두 행으로 남는다 |
+| **DB (13 테이블)** | 1부 7개(큐·발행·알림) + 2부 6개(캠페인·웹훅 이벤트·발송 큐·1회용 토큰·발송 이력·전환). 큐 상태·lease·전이 이력·쿼터·알림 도달이 모두 행으로 남는다 |
 | **큐 선점** | `ORDER BY priority DESC, available_at, id LIMIT 1 FOR UPDATE SKIP LOCKED` — 워커 10개가 같은 행에 줄 서지 않는다 |
 | **장애 복구** | lease 만료 = 죽은 워커의 작업. 회수해서 `delayed`(또는 `dlq`)로 되돌린다 |
 | **재시도 분류** | `retryable`이 상태를 정한다: 지수 백오프 재시도 / 즉시 실패 / DLQ |
@@ -807,9 +809,11 @@ flowchart LR
 ```bash
 docker compose up -d mysql
 cd backend && composer install
-php bin/migrate.php --fresh --seed --verify     # 12 테이블 · 인덱스 · FK 확인
+php bin/migrate.php --fresh --seed --verify     # 13 테이블 · 인덱스 · FK 확인
+php bin/coupon-worker.php --once                # 댓글→쿠폰 워커 (기본 드라이런 발송)
+php -S 127.0.0.1:8081 -t backend/public backend/public/router.php
 php bin/worker.php --once                       # 선점 → 진행률 → 완료 → 큐 현황
-composer test                                   # 125 tests (단위 112 + MySQL 실연동 13). DB가 없으면 13건 skip
+composer test                                   # 175 tests (단위 151 + MySQL 실연동 24). DB가 없으면 24건 skip
 ```
 
 **문서**
@@ -857,7 +861,7 @@ Meta 웹훅 (X-Hub-Signature-256)
 ⑥ dispatch_queue INSERT (PENDING, deadline=now+5s)      ~2ms
    │  ── 여기까지가 웹훅 응답 경로: 10ms 이내 ──
    ▼
-⑦ 워커: 토큰 발급(HMAC) → DM/알림톡 발송 → DISPATCHED    ~300~800ms
+⑦ 워커: 토큰 발급(HMAC) → DM/알림톡 발송 → 발송 이력 → DISPATCHED    ~300~800ms
    ▼
 ⑧ 실패 시 RETRY(1s→2s→4s) → 데드라인 초과 시 DEAD_LETTER
 ```
@@ -874,9 +878,12 @@ Meta 웹훅 (X-Hub-Signature-256)
 | 1 | `webhook_interaction_events.external_event_id` UNIQUE | 같은 댓글 웹훅 재전송 |
 | 2 | `dispatch_queue.idempotency_key` UNIQUE | 워커 재시작·중복 선점 |
 | 3 | `instant_claim_tokens.claim_count = 0` CAS | 링크 더블클릭·동시 사용 |
+| 4 | `dispatch_attempts`의 `SENT` 행 | 발송 후 마킹 전에 워커가 죽었을 때 재발송 |
 
 1번만 있으면 워커 재시작 시 다시 발송할 수 있고, 2번만 있으면 재전송 웹훅이 이벤트 행을 두 개
-만듭니다. 3번은 발송이 아니라 **사용**을 막는 층입니다. 서로 다른 실패 모드라 하나로 합칠 수 없습니다.
+만듭니다. 3번은 발송이 아니라 **사용**을 막는 층입니다. 4번은 1·2번이 덮지 못하는 구간
+(전송은 성공했는데 큐 행이 DISPATCHED가 되기 전에 프로세스가 죽은 경우)을 덮습니다. 서로 다른
+실패 모드라 하나로 합칠 수 없습니다.
 
 ### 17.4 1회용 토큰 — 원문은 저장하지 않는다
 
@@ -930,34 +937,45 @@ npx tsx -e "...simulateCommentStorm({ comments: 1000, concurrency: 256, clickRat
 | --- | --- | --- |
 | 코어 엔진 | `src/core/interactiveCouponDispatcher.ts` | 파서, 키워드 정규화, 멱등 처리, 5초 SLA 디스패치, DLQ 격리, HMAC 1회용 토큰, 퍼널 분석, 부하 시뮬레이터 |
 | 콘솔(React) | `src/ui/InteractivePromotionConsole.tsx` | 웹훅 접수·발송·SLA·퍼널·DLQ·시뮬레이션 카드 |
-| 백엔드 | `backend/src/Services/InteractiveCouponDispatcher.php` | 웹훅 수신→큐 적재→워커 발송→수령 검증 |
+| HTTP 입구 | `backend/src/Controllers/InstagramWebhookController.php` | 서명 1회 검증 후 `media`는 발행으로, `comments`는 쿠폰으로 라우팅 |
+| 백엔드 | `backend/src/Services/InteractiveCouponDispatcher.php` | 웹훅 수신→큐 적재→워커 발송→수령 검증, 발송 이력 기록 |
+| 저장소 | `backend/src/Repositories/MySql/` | 캠페인·웹훅 이벤트·발송 큐(`SKIP LOCKED`)·1회용 토큰(CAS)·발송 이력 5종 PDO 어댑터 |
+| 워커 | `backend/bin/coupon-worker.php` | 대기열 선점 → 토큰 발급 → DM/알림톡 → DISPATCHED/RETRY/DEAD_LETTER |
+| 발송기 | `backend/src/Services/Messaging/` | 드라이런 · Instagram private reply · SENS 알림톡 · 채널 라우터/팩토리 |
 | 백엔드 | `backend/src/Services/FraudDetectionService.php` | 작성자/서브넷/신규/문구 점수 |
 | 보안 | `backend/src/Security/HmacTokenSigner.php` | HMAC-SHA256 서명·키 회전·`hash_equals` |
-| 스키마 | `database/schema.sql` §8~12 | 캠페인·웹훅 이벤트·발송 큐·1회용 토큰·전환 퍼널 5테이블 |
+| 보안 | `backend/src/Security/Pseudonymizer.php` | 작성자 플랫폼 id를 키 있는 HMAC으로 저장(원문 미보관) |
+| 스키마 | `database/schema.sql` §8~13 | 캠페인·웹훅 이벤트·발송 큐·1회용 토큰·발송 이력·전환 퍼널 6테이블 |
 | 설계서 | `database/ERD_SPEC.md` §9~15 | ERD·5초 시간 예산·멱등 3중 방어·어뷰징·운영 쿼리 |
 
 ### 17.8 정직한 경계
 
-- **댓글 웹훅은 아직 HTTP로 연결되어 있지 않습니다.** PHP 쪽 `InteractiveCouponDispatcher`는
-  서명 확인 → 파싱 → 캠페인·키워드 매칭 → 멱등 INSERT → 어뷰징 점수 → 큐 적재 순서를 실제로
-  구현했고 단위 테스트가 덮습니다. 그러나 `public/index.php`의 `/webhooks/instagram`은 지금
-  **게시물 발행 알림(`field: media`)만** 처리합니다. 댓글(`field: comments`)을 이 서비스로 넘기는
-  라우트가 없고, `CampaignCatalog`·`InteractionEventStore`·`DispatchQueueStore`·`ClaimTokenStore`는
-  인터페이스만 있으며 MySQL 어댑터가 없습니다. 그래서 "PHP가 댓글을 받아 DM을 보낸다"는 문장은
-  아직 사실이 아닙니다.
-- **연결에 필요한 작업은 네 가지입니다.**
-  1. `PublishWebhookController`에 `comments` 분기(또는 별도 컨트롤러)를 추가해 `handleWebhook()`으로 전달
-  2. 위 4개 인터페이스의 MySQL 구현(`FOR UPDATE SKIP LOCKED`로 `dispatch_queue` 선점)
-  3. `bin/coupon-worker.php` — `dispatchPending()`을 주기적으로 호출하는 워커
-  4. `NotificationSender` 구현(IG DM API 또는 SENS)과 자격 증명
-  화면(18장)의 3단계 안내가 이 순서를 그대로 보여 주고, 연결 전에는 같은 엔진을 브라우저에서
-  돌려 흐름을 확인합니다.
-- **실발송은 검증 범위 밖**입니다. Meta DM·네이버클라우드 SENS 실호출은 자격 증명이 없어, 어댑터
-  인터페이스·서명 벡터·실패 분류까지가 검증 범위입니다.
-- **HMAC-SHA256은 양쪽 구현이 같은 함수**임을 테스트 벡터로 확인했습니다(TS 구현이 RFC 벡터와 일치,
-  PHP는 `hash_hmac`). 다만 키 관리(KMS·회전 주기)는 문서화만 되어 있고 실제 KMS 연동은 없습니다.
-- 위 17.6의 초당 처리량은 **인프로세스 시뮬레이션**입니다. 실제 Meta 웹훅 처리량은 네트워크·DB가
-  결정하며, 이 수치를 운영 TPS로 주장하지 않습니다.
+- **이제 HTTP부터 수령까지 실제로 연결되어 있습니다.** `POST /webhooks/instagram`은 `media`와
+  `comments`를 한 번의 서명 검증으로 나눠 처리하고, 댓글은 `webhook_interaction_events`(멱등)
+  → `dispatch_queue`(5초 데드라인)로 적재됩니다. `php backend/bin/coupon-worker.php`가 그 행을
+  `FOR UPDATE SKIP LOCKED`로 선점해 1회용 토큰을 발급하고 발송한 뒤 `dispatch_attempts`에
+  결과를 남깁니다. `GET /c/{token}`은 같은 토큰의 두 번째 클릭을 `ALREADY_CLAIMED`로 끊습니다.
+  검증 범위: MySQL 8.0.40 + `php -S` + curl로 위 전 구간, PHPUnit 175건(그중 실 DB 24건).
+- **실발송은 여전히 검증 범위 밖입니다.** 기본 발송기는 드라이런(`provider=dry_run`)이고,
+  `COUPON_SENDER=live`와 Meta/SENS 자격 증명을 넣어야 실제 호출이 나갑니다. Instagram private
+  reply는 `instagram_manage_messages` 권한과 앱 검수가 필요하고, SENS 알림톡은 검수된 템플릿
+  코드(`SENS_TEMPLATE_COUPON`)가 있어야 합니다. 어댑터의 요청 형식·오류 분류(429/코드 4 재시도,
+  190/100 영구실패)까지가 테스트로 고정된 범위입니다.
+- **인스타 앱 쪽 등록은 남아 있습니다.** Meta 앱에서 콜백 URL과 `comments` 구독을 켜고
+  `IG_VERIFY_TOKEN`·`IG_APP_SECRET`·페이지 토큰을 넣는 일은 계정 소유자만 할 수 있습니다.
+  코드와 화면(18장 3단계)은 그 순서를 그대로 안내합니다.
+- **발송 수신자 id는 큐에 원문으로 둡니다.** Meta가 DM을 보낼 때 요구하는 값이라 해시로 바꿀 수
+  없습니다. 대신 이벤트 원장(`webhook_interaction_events.author_platform_id`)은 키 있는 HMAC만
+  저장하고, 1회용 토큰 원문은 어디에도 저장하지 않습니다. 운영에서는 `recipient_ref`를 암호화
+  하거나 발송 후 파기하는 정책이 필요합니다.
+- **1인당 발급 수(`max_claims_per_user`)는 아직 강제하지 않습니다.** 컬럼과 도메인 값은 있지만
+  발급 단계의 판정은 캠페인 장수(`claim_limit`)와 예산(`total_reward_budget`) 두 가지입니다.
+  같은 사람이 다른 댓글로 여러 장 받는 경우는 어뷰징 점수(작성자 버스트)로만 걸립니다.
+- **부하 수치는 인프로세스 시뮬레이션입니다.** 17.6의 초당 처리량은 Node 런타임 안에서 잰 값이고,
+  이번에 붙인 MySQL 경로의 처리량은 별도로 측정하지 않았습니다. 운영 TPS로 주장하지 않습니다.
+- **HMAC 키 관리는 문서화만 되어 있습니다.** 키 회전용 이전 키(`COUPON_TOKEN_SIGNING_KEY_OLD`)는
+  지원하지만 KMS 연동은 없습니다. 운영에서는 `COUPON_TOKEN_SIGNING_KEY`를 필수로 두고(미설정 시
+  기동 실패) KMS/Secret Manager에서 주입해야 합니다.
 
 ---
 

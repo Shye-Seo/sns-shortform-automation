@@ -20,7 +20,8 @@ composer install
 cp .env.example .env                  # DB_* only is enough; without SENS/IG keys those features stay off
 php bin/migrate.php --fresh --seed --verify
 php bin/worker.php --once             # claim → progress → complete → queue counts
-composer test                         # 85 tests (72 unit + 13 skipped without MySQL)
+php bin/coupon-worker.php --once      # claim → mint one-time token → send → dispatch_attempts
+composer test                         # 151 unit tests (24 more with MySQL)
 ```
 
 Measured locally (MySQL 8.0.40, PHP 8.2.32):
@@ -41,7 +42,9 @@ queue: {"waiting":0,"delayed":1,"active":0,"completed":1,"failed":0,"dlq":0}
 | --- | --- | --- |
 | `GET` | `/health` | liveness + which integrations are configured |
 | `GET` | `/webhooks/instagram` | Meta verification — returns the **raw** challenge string |
-| `POST` | `/webhooks/instagram` | Meta events, `X-Hub-Signature-256` verified over the raw body |
+| `POST` | `/webhooks/instagram` | Meta events: `media` (publish) **and** `comments` (coupon), `X-Hub-Signature-256` verified over the raw body |
+| `GET` | `/c/{token}` | one-time coupon link → `GRANTED` / `ALREADY_CLAIMED` / `EXPIRED` |
+| `POST` | `/api/v1/coupons/claim` | same claim from an app/webview (`{"token":"…"}`) |
 | `GET` | `/api/v1/tenants/{id}/queue` | queue counts per state |
 | `GET` | `/api/v1/tenants/{id}/publish` | publish counts per status |
 | `POST` | `/api/v1/projects/{id}/publish` | orchestrated publish: quota → container → poll → publish → notify |
@@ -54,6 +57,15 @@ curl -X POST http://127.0.0.1:8081/api/v1/projects/1/publish \
   -H 'Content-Type: application/json' \
   -d '{"video_url":"https://cdn.example.com/renders/demo-kitchen.mp4","recipient_phone":"010-1234-5678"}'
 # → {"project_id":1,"outcome":{"status":"published","mediaId":"...","permalink":"https://www.instagram.com/reel/..."}}
+
+# comment → coupon: signed comments event, then the worker, then the claim link
+BODY='{"object":"instagram","entry":[{"id":"ig-account","time":1763690400,"changes":[{"field":"comments","value":{"id":"c1","text":"할인","from":{"id":"igsid-1"},"media":{"id":"reels_17894561234567890"}}}]}]}'
+SIG="sha256=$(printf '%s' "$BODY" | openssl dgst -sha256 -hmac "$IG_APP_SECRET" -r)"
+curl -X POST http://127.0.0.1:8081/webhooks/instagram \
+  -H 'Content-Type: application/json' -H "X-Hub-Signature-256: ${SIG%% *}" -d "$BODY"
+# → …, "comments":{"processed":1,"enqueued":1,…,"status":"OK"}
+php bin/coupon-worker.php --once    # → sent=1
+curl http://127.0.0.1:8081/c/<token> # → {"outcome":"GRANTED",…} once, then ALREADY_CLAIMED
 ```
 
 ## Layout
@@ -61,24 +73,35 @@ curl -X POST http://127.0.0.1:8081/api/v1/projects/1/publish \
 ```
 backend/
 ├── public/index.php                          # DI + routes + error normalisation
+├── public/router.php                         # php -S router (claim links contain a dot)
 ├── bin/
 │   ├── migrate.php                           # schema + seed + structural verification
-│   └── worker.php                            # claim (SKIP LOCKED) → progress → complete/fail → notify
+│   ├── worker.php                            # claim (SKIP LOCKED) → progress → complete/fail → notify
+│   └── coupon-worker.php                     # claim → one-time token → send → attempt ledger
 ├── src/
-│   ├── Controllers/PublishWebhookController.php   # Meta verify + event dedupe
+│   ├── Controllers/
+│   │   ├── PublishWebhookController.php       # media events: verify + event dedupe
+│   │   ├── CommentsWebhookController.php      # comments → InteractiveCouponDispatcher
+│   │   └── InstagramWebhookController.php     # one URL, signature verified once, both paths
+│   ├── Bootstrap/CouponServices.php           # composition root shared by HTTP and worker
 │   ├── Services/
 │   │   ├── InstagramGraphApiService.php      # container → poll → publish, quota, token refresh
 │   │   ├── PublishOrchestrator.php           # the publish sequence, with failure taxonomy
+│   │   ├── InteractiveCouponDispatcher.php   # webhook → queue, worker → token/send, claim CAS
+│   │   ├── Messaging/                        # dry-run / Instagram DM / SENS adapters + factory
 │   │   ├── NaverCloudSensService.php         # SENS signature/transport, 100-message grouping
 │   │   ├── ShortformAlertComposer.php        # alimtalk template variables (4 events)
 │   │   └── ShortformAlertNotifier.php        # dedupe + failure isolation
 │   ├── Repositories/
 │   │   ├── ShortformRepository.php           # queue claim, publish lifecycle, webhook dedupe
+│   │   ├── MySql/                            # 4 coupon stores + dispatch_attempts ledger
 │   │   ├── JobQueueStore.php  PublishStore.php  NotificationStore.php   # narrow contracts
-│   ├── Domain/                               # Platform, JobState, PublishStatus enums
+│   │   ├── CampaignCatalog.php  InteractionEventStore.php  DispatchQueueStore.php
+│   │   └── ClaimTokenStore.php  DispatchAttemptStore.php  NotificationSender.php
+│   ├── Domain/                               # Platform, JobState, PublishStatus + Interactive/
 │   ├── Database/Connection.php               # PDO + deadlock retry
-│   └── Support/                              # Env, Clock, Sleeper, HttpClient(Curl)
-├── tests/                                    # 85 tests, integration gated by SHORTFORM_INTEGRATION=1
+│   └── Support/                              # Env, Clock, Sleeper, HttpClient(Curl), DbTime
+├── tests/                                    # 151 unit + 24 live MySQL (SHORTFORM_INTEGRATION=1)
 └── examples/ (see database/seed_demo.sql)
 ```
 
@@ -193,8 +216,8 @@ duplicate-placeholder bugs were caught here.
 ## Tests
 
 ```bash
-composer test                            # 85 tests; integration skipped without MySQL
-SHORTFORM_INTEGRATION=1 composer test    # includes 14 live MySQL tests
+composer test                            # 151 unit tests; integration skipped without MySQL
+SHORTFORM_INTEGRATION=1 composer test    # + 24 live MySQL tests
 ```
 
 | File | What it pins |
@@ -206,12 +229,20 @@ SHORTFORM_INTEGRATION=1 composer test    # includes 14 live MySQL tests
 | `Controllers/PublishWebhookControllerTest` | challenge echo, dotted params, raw-body signature, duplicate vs unknown media |
 | `Security/MetaWebhookSignatureVerifierTest` | valid/forged/tampered body, empty or wrong secret, SHA-1 downgrade, malformed and uppercase headers, UTF-8 body, actionable rejection messages |
 | `Integration/DatabaseIntegrationTest` | SKIP LOCKED (one worker wins), progress monotonic, delayed→dlq, stalled reclaim, one publish row with attempts++, webhook redelivery, notification dedupe, CHECK on experiment variants |
+| `Controllers/InstagramWebhookControllerTest` | comments enqueue, unsigned rejected with no rows, media still applied, mixed body once, redelivery dedupe |
+| `Services/InstagramMessagingSenderTest` | private reply uses `comment_id`, Bearer token, 429/code4 retry, 190/100 permanent, network retry, 1,000-char cap |
+| `Services/SensCouponSenderTest` | reviewed template code, digit-normalised recipient, 202 accepted, 429 retry, 4xx permanent |
+| `Services/CouponSenderFactoryTest` | dry-run default, live fails without credentials, per-channel routing, deterministic dry-run ids |
+| `Services/CouponDispatchLedgerTest` | attempt per send, token attached to the queue row, SENT row stops a second send after a crash |
+| `Integration/CouponPipelineIntegrationTest` | webhook → DB → worker → attempt → claim (fresh schema), CLAIMED lease reclaim, SLA late → DEAD_LETTER, 3 retries → DLQ, token CAS, fraud counters, claim limit |
 
 ## Operations
 
 | Task | How |
 | --- | --- |
 | Worker | `php bin/worker.php --jobs=10 --tenant=1` in a loop (systemd/NCP Container) |
+| Coupon worker | `php bin/coupon-worker.php --loop --sleep-ms=200` (sender set by `COUPON_SENDER`) |
+| Coupon DLQ | `dispatch_queue.status = 'DEAD_LETTER'` — each row's `last_error` and `dispatch_attempts` say why |
 | Stalled recovery | every worker start runs `reclaimStalled(50)`; a cron for quiet queues is fine too |
 | Notification retry | `alimtalk_notifications.status IN ('queued','failed') AND attempts < 3` |
 | Quota guard | `GET /api/v1/tenants/{id}/publish` shows published/failed counts; the orchestrator refuses at 25/25 |
@@ -224,3 +255,9 @@ SHORTFORM_INTEGRATION=1 composer test    # includes 14 live MySQL tests
 - `POST /projects/{id}/publish` does not check the approval hash because that hash is produced by the
   script engine (narration + caption + cues). The worker that owns the full script enforces it.
 - YouTube publishing is modelled (platform enum, per-day limit) but only Instagram is orchestrated here.
+- The coupon worker's default sender is **dry-run**: it writes the attempt ledger with `provider=dry_run`
+  and never calls Meta or SENS. Real sends need `COUPON_SENDER=live` plus credentials, and the
+  `dispatch_queue.recipient_ref` is the platform id Meta requires for delivery (the event ledger keeps
+  only an HMAC of it).
+- Instagram private replies require the `instagram_manage_messages` permission and app review; the
+  adapter is written against `POST /{ig-user-id}/messages` but the call itself is unverified here.

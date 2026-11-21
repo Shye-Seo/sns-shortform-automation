@@ -414,6 +414,8 @@ CREATE TABLE webhook_interaction_events (
   author_platform_id  CHAR(64)        NOT NULL                COMMENT '작성자 플랫폼 ID의 HMAC-SHA256(원문 저장 금지)',
   author_handle       CHAR(64)        NULL                    COMMENT '작성자 핸들 HMAC. 표시가 필요하면 별도 마스킹',
   message_text        VARCHAR(500)    NOT NULL DEFAULT ''     COMMENT '댓글 본문(최대 500자). 키워드 매칭에만 쓴다',
+  normalised_text     VARCHAR(200)    NULL                    COMMENT '공백·문장부호를 제거한 비교용 본문(도배 탐지)',
+  client_subnet       VARCHAR(64)     NULL                    COMMENT '수신 IP의 /24(IPv4)·/64(IPv6). 매크로 대역 탐지',
   matched_keyword     VARCHAR(40)     NULL                    COMMENT '매칭된 트리거 키워드',
   signature_verified  TINYINT(1)      NOT NULL DEFAULT 0      COMMENT '1=Meta X-Hub-Signature-256 검증 통과',
   processing_status   ENUM('RECEIVED','PARSED','QUEUED','DISPATCHED','IGNORED','REJECTED','DUPLICATE')
@@ -426,6 +428,8 @@ CREATE TABLE webhook_interaction_events (
   UNIQUE KEY uq_webhook_external_event (external_event_id) COMMENT '재전송 방어: 같은 댓글은 한 행',
   KEY idx_webhook_campaign_status (campaign_id, processing_status, received_at) COMMENT '캠페인별 처리 현황·지연',
   KEY idx_webhook_author (author_platform_id, received_at) COMMENT '다계정/도배 탐지',
+  KEY idx_webhook_subnet (client_subnet, received_at) COMMENT '서브넷 폭주 탐지',
+  KEY idx_webhook_body (normalised_text, received_at) COMMENT '동일 문구 도배 탐지',
   KEY idx_webhook_status_received (processing_status, received_at) COMMENT '재처리 워커(Failed/Received)',
   CONSTRAINT fk_webhook_campaign FOREIGN KEY (campaign_id) REFERENCES interactive_campaigns (id)
     ON DELETE SET NULL ON UPDATE CASCADE,
@@ -441,8 +445,9 @@ CREATE TABLE webhook_interaction_events (
 -- 5초 SLA를 지키려면 "큐에 넣고 응답"이 아니라 "큐에 넣고 **데드라인을 박은 뒤**
 -- 워커가 즉시 집어가는 구조"여야 한다. 그래서 행에 dispatch_deadline_at이 있다.
 --
--- 상태 전이: PENDING → DISPATCHED | FAILED → RETRY → DEAD_LETTER
+-- 상태 전이: PENDING → CLAIMED → DISPATCHED | RETRY → CLAIMED … | DEAD_LETTER
 --   · PENDING에서 available_at이 지나야 워커가 집는다(즉시 재시도 폭주 방지)
+--   · CLAIMED는 워커가 선점한 상태다. lease(claimed_at)가 지나면 다른 워커가 회수한다
 --   · RETRY는 지수 백오프(1s, 2s, 4s …) 후 다시 PENDING처럼 동작한다
 --   · 데드라인을 넘긴 실패는 DEAD_LETTER로 분리한다. 여기 남은 건은 사람이 봐야 한다
 --
@@ -457,9 +462,11 @@ CREATE TABLE dispatch_queue (
   channel              ENUM('ALIMTALK','INSTAGRAM_DM') NOT NULL COMMENT '발송 채널',
   recipient_ref        VARCHAR(120)    NOT NULL                COMMENT '수신자 참조(해시된 플랫폼 ID 또는 마스킹 번호)',
   idempotency_key      VARCHAR(120)    NOT NULL                COMMENT '중복 발송 차단 키. UNIQUE',
-  status               ENUM('PENDING','DISPATCHED','FAILED','RETRY','DEAD_LETTER') NOT NULL DEFAULT 'PENDING'
-                       COMMENT 'PENDING=대기, DISPATCHED=발송, FAILED=실패, RETRY=재시도 대기, DEAD_LETTER=포기',
+  status               ENUM('PENDING','CLAIMED','DISPATCHED','FAILED','RETRY','DEAD_LETTER') NOT NULL DEFAULT 'PENDING'
+                       COMMENT 'PENDING=대기, CLAIMED=워커 선점, DISPATCHED=발송, FAILED=실패, RETRY=재시도 대기, DEAD_LETTER=포기',
   attempts             TINYINT UNSIGNED NOT NULL DEFAULT 0     COMMENT '발송 시도 횟수',
+  worker_id            VARCHAR(80)     NULL                    COMMENT '선점한 워커(호스트:pid). 죽은 워커 행 회수 기준',
+  claimed_at           DATETIME(3)     NULL                    COMMENT '선점 시각. lease 만료 판정',
   available_at         DATETIME(3)     NOT NULL DEFAULT CURRENT_TIMESTAMP(3) COMMENT '다음 시도 가능 시각(백오프)',
   dispatch_deadline_at DATETIME(3)     NOT NULL                COMMENT '5초 SLA 데드라인. 넘기면 DEAD_LETTER',
   dispatched_at        DATETIME(3)     NULL                    COMMENT '실제 발송 시각',
@@ -471,6 +478,7 @@ CREATE TABLE dispatch_queue (
   PRIMARY KEY (id),
   UNIQUE KEY uq_dispatch_idempotency (idempotency_key) COMMENT '이벤트×채널×수신자 1회 발송',
   KEY idx_dispatch_ready (status, available_at) COMMENT '워커: PENDING/RETRY 중 시도 가능한 행',
+  KEY idx_dispatch_lease (status, claimed_at) COMMENT '워커: 죽은 선점(lease 만료) 회수',
   KEY idx_dispatch_campaign (campaign_id, status) COMMENT '캠페인별 발송 현황',
   KEY idx_dispatch_deadline (status, dispatch_deadline_at) COMMENT 'SLA 초과 스캔',
   CONSTRAINT fk_dispatch_campaign FOREIGN KEY (campaign_id) REFERENCES interactive_campaigns (id)
@@ -509,12 +517,14 @@ CREATE TABLE instant_claim_tokens (
   claim_count      TINYINT UNSIGNED NOT NULL DEFAULT 0     COMMENT '사용 시도 성공 횟수. 0→1만 허용',
   claimed_at       DATETIME(3)     NULL                    COMMENT '사용 시각',
   claimed_ip       VARBINARY(16)   NULL                    COMMENT '사용 IP(INET6_ATON). 분쟁·어뷰징 추적',
+  expired_at       DATETIME(3)     NULL                    COMMENT '만료 처리 시각(만료 스윕이 표시)',
   expires_at       DATETIME(3)     NOT NULL                COMMENT '만료 시각(발급 + TTL, 기본 15분)',
   created_at       DATETIME(3)     NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
   PRIMARY KEY (id),
   UNIQUE KEY uq_claim_token_uuid (token_uuid) COMMENT '링크 조회 키',
   UNIQUE KEY uq_claim_token_hash (token_hash) COMMENT '원문 위조 방지 — 해시로만 검증',
   KEY idx_claim_expiry (expires_at, is_claimed) COMMENT '만료 스윕',
+  KEY idx_claim_expired_mark (expired_at, expires_at) COMMENT '만료 표시 스윕',
   CONSTRAINT fk_claim_campaign FOREIGN KEY (campaign_id) REFERENCES interactive_campaigns (id)
     ON DELETE CASCADE ON UPDATE CASCADE,
   CONSTRAINT fk_claim_dispatch FOREIGN KEY (dispatch_queue_id) REFERENCES dispatch_queue (id)
@@ -525,7 +535,46 @@ CREATE TABLE instant_claim_tokens (
   COMMENT='1회용 딥링크 클레임 토큰(HMAC 서명·15분 TTL·compare-and-set 사용)';
 
 -- -----------------------------------------------------------------------------
--- 12. shortform_conversion_attributions — 풀 퍼널 전환 로그(ROAS)
+-- 12. dispatch_attempts — 발송 시도 이력(메시지 단위 감사 로그)
+-- -----------------------------------------------------------------------------
+-- dispatch_queue는 "지금 어떤 상태인가"만 안다. 운영에서 필요한 질문은 다르다.
+--   · 이 발송이 실제로 나갔나? 어느 메시지 id로?  → 제공자 정산·CS 답변의 근거
+--   · 같은 큐 행이 재시도로 몇 번 나갔나?         → 재시도 폭주·과금 확인
+--   · 실패가 일시장애였나 영구장애였나?         → DLQ를 사람이 볼지 자동 재시도할지
+-- 그래서 발송 시도마다 한 행을 남긴다. 성공·실패 모두 남기며, 성공 행의 존재가
+-- "이미 나갔다"는 사실이 되어 워커가 전송 후 죽었다 살아나도 다시 보내지 않는다.
+-- payload에는 본문 원문 대신 딥링크와 템플릿 코드만 남긴다(본문은 개인정보가 될 수 있다).
+-- -----------------------------------------------------------------------------
+CREATE TABLE dispatch_attempts (
+  id                  BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '시도 PK',
+  dispatch_queue_id   BIGINT UNSIGNED NOT NULL                COMMENT '대상 발송 큐 행',
+  campaign_id         BIGINT UNSIGNED NOT NULL                COMMENT '캠페인(집계용 비정규화)',
+  claim_token_id      BIGINT UNSIGNED NULL                    COMMENT '이 시도가 전달한 1회용 토큰',
+  channel             ENUM('ALIMTALK','INSTAGRAM_DM') NOT NULL COMMENT '발송 채널',
+  provider            VARCHAR(24)     NOT NULL                COMMENT '실제 전송 주체(instagram|sens|dry_run)',
+  attempt_no          TINYINT UNSIGNED NOT NULL                COMMENT '몇 번째 시도인가(1부터)',
+  recipient_ref       VARCHAR(120)    NOT NULL                COMMENT '수신자 참조(발송 시점 값)',
+  outcome             ENUM('SENT','RETRYABLE_FAILURE','PERMANENT_FAILURE') NOT NULL COMMENT '결과 분류',
+  provider_message_id VARCHAR(80)     NULL                    COMMENT '제공자 메시지 id(도달 대사 키)',
+  error_message       VARCHAR(300)    NULL                    COMMENT '실패 사유(제공자 오류 코드 포함)',
+  latency_ms          DECIMAL(8,1)    NOT NULL DEFAULT 0     COMMENT '전송 지연(ms)',
+  request_payload     JSON            NULL                    COMMENT '딥링크·템플릿 코드 등 최소 본문',
+  created_at          DATETIME(3)     NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  PRIMARY KEY (id),
+  KEY idx_attempt_queue (dispatch_queue_id, id) COMMENT '큐 행별 시도 이력',
+  KEY idx_attempt_provider_message (provider_message_id) COMMENT '제공자 메시지 id 역조회',
+  KEY idx_attempt_campaign (campaign_id, outcome, created_at) COMMENT '캠페인 성공률·지연 집계',
+  CONSTRAINT fk_attempt_queue FOREIGN KEY (dispatch_queue_id) REFERENCES dispatch_queue (id)
+    ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT fk_attempt_campaign FOREIGN KEY (campaign_id) REFERENCES interactive_campaigns (id)
+    ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT fk_attempt_token FOREIGN KEY (claim_token_id) REFERENCES instant_claim_tokens (id)
+    ON DELETE SET NULL ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
+  COMMENT='DM/알림톡 발송 시도 이력(성공·실패·제공자 메시지 id)';
+
+-- -----------------------------------------------------------------------------
+-- 13. shortform_conversion_attributions — 풀 퍼널 전환 로그(ROAS)
 -- -----------------------------------------------------------------------------
 -- 숏폼 마케팅의 질문은 "몇 명이 쿠폰을 받았나"가 아니라 **"그 쿠폰이 얼마를 벌었나"** 다.
 -- 그래서 퍼널을 단계별 행으로 남긴다: VIDEO_VIEW → COMMENT → LINK_CLICK → CLAIM → PURCHASE.

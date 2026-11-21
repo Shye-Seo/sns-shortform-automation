@@ -36,7 +36,8 @@
     "test": "phpunit --colors=always",
     "migrate": "php bin/migrate.php",
     "worker": "php bin/worker.php",
-    "serve": "php -S 127.0.0.1:8081 -t public"
+    "coupon-worker": "php bin/coupon-worker.php",
+    "serve": "php -S 127.0.0.1:8081 -t public public/router.php"
   },
   "config": {
     "sort-packages": true

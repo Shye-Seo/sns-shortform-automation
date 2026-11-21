@@ -278,13 +278,13 @@ export function CouponPanel() {
       <Card
         eyebrow="3단계"
         title="인스타에서 댓글을 받으려면"
-        hint="인스타그램이 댓글을 알려 줄 주소를 등록해야 실제 댓글이 들어옵니다."
-        actions={<Pill tone="warn">아직 연결되지 않음</Pill>}
+        hint="이 화면은 데모지만, 이 저장소의 서버는 아래 경로로 댓글을 실제로 받아 DM 발송까지 처리합니다. 인스타 앱에 콜백을 등록하는 일만 남았습니다."
+        actions={<Pill tone="ok">서버 경로 연결됨</Pill>}
       >
         <div className="grid three-steps">
           <div className="step">
             <span className="step-no">1</span>
-            <h3>콜백 주소 등록</h3>
+            <h3>콜백 주소 등록 <Pill tone="ghost">계정 연결 시</Pill></h3>
             <p className="small muted">
               Meta 앱 → Instagram → 웹훅에서 아래 주소와 확인 토큰을 넣습니다. 주소는 서버가 공개되어 있어야 합니다.
             </p>
@@ -297,7 +297,7 @@ export function CouponPanel() {
           </div>
           <div className="step">
             <span className="step-no">2</span>
-            <h3>댓글 알림 켜기</h3>
+            <h3>댓글 알림 켜기 <Pill tone="ghost">계정 연결 시</Pill></h3>
             <p className="small muted">
               구독 항목에서 <strong>comments</strong>를 켭니다. 게시물 발행 알림(media)과 댓글 알림(comments)은 같은
               주소로 오고, 서버가 항목별로 나눠 처리합니다.
@@ -305,13 +305,50 @@ export function CouponPanel() {
           </div>
           <div className="step">
             <span className="step-no">3</span>
-            <h3>서버가 받아서 DM 보내기</h3>
+            <h3>서버가 받아서 DM 보내기 <Pill tone="ok">구현됨</Pill></h3>
             <p className="small muted">
               서버는 ① 서명 확인 → ② 게시물·키워드 대조 → ③ DM 발송 대기열 적재 순서로 처리합니다. 인스타는 5초
-              안에 응답이 없으면 같은 알림을 다시 보내므로, 발송은 대기열에서 따로 합니다.
+              안에 응답이 없으면 같은 알림을 다시 보내므로, 발송은 대기열에서 워커가 따로 합니다.
             </p>
           </div>
         </div>
+        <div className="divider" />
+        <table className="data">
+          <thead>
+            <tr>
+              <th>서버에 있는 것</th>
+              <th>하는 일</th>
+              <th>상태</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td className="mono">POST {CALLBACK_PATH}</td>
+              <td>서명 확인 → 댓글 파싱 → 키워드 매칭 → 중복 방지 → 5초 데드라인으로 대기열 적재</td>
+              <td><Pill tone="ok">연결됨</Pill></td>
+            </tr>
+            <tr>
+              <td className="mono">bin/coupon-worker.php</td>
+              <td>대기열 선점 → 1회용 토큰 발급 → DM/알림톡 발송 → 발송 이력 기록 → 재시도·DLQ</td>
+              <td><Pill tone="ok">연결됨</Pill></td>
+            </tr>
+            <tr>
+              <td className="mono">GET /c/&#123;token&#125;</td>
+              <td>쿠폰 수령. 같은 링크의 두 번째 클릭은 ‘이미 사용됨’으로 끊습니다.</td>
+              <td><Pill tone="ok">연결됨</Pill></td>
+            </tr>
+            <tr>
+              <td className="mono">dispatch_attempts</td>
+              <td>발송 시도마다 성공·실패·제공자 메시지 id를 남깁니다(CS·정산 근거).</td>
+              <td><Pill tone="ok">연결됨</Pill></td>
+            </tr>
+            <tr>
+              <td className="mono">Meta / SENS 실발송</td>
+              <td>발송기 코드와 오류 분류는 구현되어 있고, 자격 증명을 넣으면 실제로 나갑니다.</td>
+              <td><Pill tone="warn">실호출 미검증</Pill></td>
+            </tr>
+          </tbody>
+        </table>
         <details className="details">
           <summary>개발자용 세부 설정</summary>
           <ul className="small muted">
@@ -320,7 +357,11 @@ export function CouponPanel() {
             <li>
               중복 방지: 같은 댓글 번호는 한 번만 처리합니다. 인스타가 같은 알림을 여러 번 보내도 DM은 한 번입니다.
             </li>
-            <li>연결 뒤에는 아래 ‘연결 전 점검’ 대신 실제 댓글이 이 흐름으로 들어옵니다.</li>
+            <li>
+              발송기 기본값은 드라이런입니다(<code>COUPON_SENDER=dryrun</code>). 실제 발송은 <code>live</code>와
+              Meta·SENS 자격 증명을 넣었을 때만 나갑니다.
+            </li>
+            <li>콜백 등록 뒤에는 아래 ‘연결 전 점검’ 대신 실제 댓글이 이 흐름으로 들어옵니다.</li>
           </ul>
         </details>
       </Card>
@@ -667,8 +708,8 @@ export function CouponPanel() {
             )}
             <div className="divider" />
             <div className="small muted">
-              이 점검은 서버 없이 브라우저에서 같은 규칙을 돌린 것입니다. 실제 연결 뒤에는 인스타가 보낸 댓글로
-              같은 계산이 일어납니다.
+              이 화면은 서버 없이 같은 규칙을 브라우저에서 돌린 것입니다. 실제 서버 경로는 위 3단계 표에 있고,
+              인스타가 보낸 댓글이 오면 같은 계산이 MySQL에서 일어납니다.
             </div>
           </div>
         </div>

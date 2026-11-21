@@ -75,6 +75,7 @@ ON DUPLICATE KEY UPDATE hypothesis = new.hypothesis;
 --   · 웹훅 이벤트 60건 — 48건 매칭, 6건 키워드 불일치(IGNORED), 1건 서명 불일치(REJECTED), 1건 중복(DUPLICATE)
 --   · 발송 큐 40건 — DISPATCHED 28 / PENDING 6 / RETRY 3 / DEAD_LETTER 3
 --   · 1회용 토큰 28건 — 사용 12 / 미사용 13 / 만료 3
+--   · 발송 시도 이력 31건 — SENT 28 / PERMANENT_FAILURE 3
 --   · 전환 로그 — VIDEO_VIEW → COMMENT → LINK_CLICK → CLAIM → PURCHASE 단계별
 -- UUID는 MD5 기반으로 결정적으로 만든다(재적재해도 같은 값, 시드 재현성).
 -- =============================================================================
@@ -193,6 +194,34 @@ SELECT
   created_at
 FROM dispatched
 ON DUPLICATE KEY UPDATE is_claimed = VALUES(is_claimed);
+
+-- 발송 시도 이력 — DISPATCHED 28건은 SENT 1회, DEAD_LETTER 3건은 마지막 실패 1회.
+-- 실제 워커는 재시도마다 행을 남긴다(데모는 마지막 시도만 대표로 적재).
+INSERT INTO dispatch_attempts
+  (dispatch_queue_id, campaign_id, claim_token_id, channel, provider, attempt_no, recipient_ref,
+   outcome, provider_message_id, error_message, latency_ms, request_payload, created_at)
+WITH sent AS (
+  SELECT d.id AS dispatch_id, d.recipient_ref, d.created_at, d.dispatched_at, t.id AS token_id,
+         ROW_NUMBER() OVER (ORDER BY d.id) AS rn
+    FROM dispatch_queue d
+    LEFT JOIN instant_claim_tokens t ON t.dispatch_queue_id = d.id
+   WHERE d.campaign_id = 1 AND d.status = 'DISPATCHED'
+), dead AS (
+  SELECT d.id AS dispatch_id, d.recipient_ref, d.created_at, d.last_error,
+         ROW_NUMBER() OVER (ORDER BY d.id) AS rn
+    FROM dispatch_queue d
+   WHERE d.campaign_id = 1 AND d.status = 'DEAD_LETTER'
+)
+SELECT dispatch_id, 1, token_id, 'INSTAGRAM_DM', 'dry_run', 1, recipient_ref,
+       'SENT', CONCAT('dryrun_', SUBSTR(SHA2(CONCAT('send-', dispatch_id), 256), 1, 16)), NULL,
+       412.5, JSON_OBJECT('deepLink', CONCAT('http://127.0.0.1:8081/c/token-', dispatch_id), 'templateCode', 'shortform_claim_v1'),
+       COALESCE(dispatched_at, created_at)
+  FROM sent
+UNION ALL
+SELECT dispatch_id, 1, NULL, 'INSTAGRAM_DM', 'dry_run', 9, recipient_ref,
+       'PERMANENT_FAILURE', NULL, LEFT(COALESCE(last_error, 'SEND_FAILED'), 300),
+       2000.0, JSON_OBJECT('templateCode', 'shortform_claim_v1'), created_at
+  FROM dead;
 
 -- 전환 퍼널 — 토큰이 있는 28건에 대해 단계별 로그(사용 12건은 PURCHASE까지)
 INSERT INTO shortform_conversion_attributions

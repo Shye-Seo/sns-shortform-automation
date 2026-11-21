@@ -60,7 +60,7 @@ final class FakeDispatchQueueStore implements DispatchQueueStore
         return $id;
     }
 
-    public function claimReady(\DateTimeImmutable $now, int $limit): array
+    public function claimReady(\DateTimeImmutable $now, int $limit, ?string $workerId = null): array
     {
         $due = array_values(array_filter($this->rows, static function (array $row) use ($now): bool {
             $active = $row['status'] === 'PENDING' || $row['status'] === 'RETRY';
@@ -74,6 +74,7 @@ final class FakeDispatchQueueStore implements DispatchQueueStore
         foreach (array_slice($due, 0, $limit) as $row) {
             $this->rows[$row['id']]['status'] = 'CLAIMED';
             $this->rows[$row['id']]['attempts'] = $row['attempts'] + 1;
+            $this->rows[$row['id']]['workerId'] = $workerId;
 
             $claimed[] = new DispatchJob(
                 id: $row['id'],
@@ -91,6 +92,11 @@ final class FakeDispatchQueueStore implements DispatchQueueStore
         }
 
         return $claimed;
+    }
+
+    public function attachToken(int $id, int $claimTokenId): void
+    {
+        $this->rows[$id]['claimTokenId'] = $claimTokenId;
     }
 
     public function markDispatched(int $id, \DateTimeImmutable $now): void

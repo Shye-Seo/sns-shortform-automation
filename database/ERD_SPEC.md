@@ -344,6 +344,8 @@ erDiagram
     interactive_campaigns ||--o{ dispatch_queue : "1 : N"
     webhook_interaction_events ||--o| dispatch_queue : "이벤트 1 : 0..1 발송"
     dispatch_queue ||--o| instant_claim_tokens : "발송 1 : 0..1 토큰"
+    dispatch_queue ||--o{ dispatch_attempts : "발송 1 : N 시도"
+    instant_claim_tokens ||--o{ dispatch_attempts : "전달 토큰"
     interactive_campaigns ||--o{ instant_claim_tokens : "1 : N"
     instant_claim_tokens ||--o{ shortform_conversion_attributions : "토큰 1 : N 단계"
     webhook_interaction_events ||--o{ shortform_conversion_attributions : "원천"
@@ -379,10 +381,22 @@ erDiagram
         bigint  interaction_event_id FK
         enum    channel "ALIMTALK|INSTAGRAM_DM"
         varchar idempotency_key UK
-        enum    status "PENDING|DISPATCHED|FAILED|RETRY|DEAD_LETTER"
+        enum    status "PENDING|CLAIMED|DISPATCHED|FAILED|RETRY|DEAD_LETTER"
         tinyint attempts
+        varchar worker_id "선점 워커"
+        datetime claimed_at "lease"
         datetime available_at
         datetime dispatch_deadline_at
+    }
+    dispatch_attempts {
+        bigint  id PK
+        bigint  dispatch_queue_id FK
+        bigint  claim_token_id FK
+        varchar provider "instagram|sens|dry_run"
+        tinyint attempt_no
+        enum    outcome "SENT|RETRYABLE_FAILURE|PERMANENT_FAILURE"
+        varchar provider_message_id
+        decimal latency_ms
     }
     instant_claim_tokens {
         bigint  id PK
@@ -501,6 +515,6 @@ LIMIT 500;
 | --- | --- | --- |
 | 댓글 하루 100만 건 | 단일 테이블 | `received_at` 일 단위 RANGE 파티셔닝 + 7일 후 아카이브 |
 | 워커 수평 확장 | MySQL 큐 | Redis Streams/ SQS로 이관, `SKIP LOCKED`는 유지(폴백) |
-| 실발송 연동 | SENS/DM 어댑터 인터페이스 | 자격 증명 주입 + 발송 결과 웹훅 수신(도달률) |
+| 실발송 연동 | Instagram DM·SENS 어댑터 구현, 기본은 드라이런 | 자격 증명 주입 + 발송 결과 웹훅 수신(도달률) |
 | 토큰 대량 발급 | 앱 난수 + SHA-256 | HMAC 키 회전(KMS) + 서명 버전 필드 |
 | 전환 정합성 | 쇼핑몰 주문 웹훅 | 주문 취소·반품 시 ROAS 재계산(음수 전환) |

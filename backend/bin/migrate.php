@@ -109,7 +109,11 @@ if (isset($options['seed'])) {
 }
 
 $tables = $pdo->query('SHOW TABLES')->fetchAll(\PDO::FETCH_COLUMN);
-$expected = ['tenants', 'creator_accounts', 'shortform_projects', 'render_jobs', 'publish_logs', 'hook_experiments', 'alimtalk_notifications'];
+$expected = [
+    'tenants', 'creator_accounts', 'shortform_projects', 'render_jobs', 'publish_logs', 'hook_experiments',
+    'alimtalk_notifications', 'interactive_campaigns', 'webhook_interaction_events', 'dispatch_queue',
+    'instant_claim_tokens', 'dispatch_attempts', 'shortform_conversion_attributions',
+];
 $missing = array_diff($expected, $tables);
 fwrite(STDOUT, sprintf("\ntables (%d): %s\n", count($tables), implode(', ', $tables)));
 if ($missing !== []) {

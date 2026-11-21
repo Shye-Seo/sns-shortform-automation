@@ -10,10 +10,13 @@ use Shortform\Domain\Interactive\DispatchJob;
  * Dispatch queue contract.
  *
  * `claimReady()` must be atomic across workers. In MySQL that is
- * `SELECT ... FOR UPDATE SKIP LOCKED`, or a single
- * `UPDATE ... SET status='PENDING' WHERE status='PENDING' ORDER BY available_at LIMIT n`.
- * Two workers must never receive the same row. The interface returns already-claimed jobs so the
- * worker cannot skip the lock step.
+ * `SELECT ... FOR UPDATE SKIP LOCKED`, followed by an UPDATE that marks the row
+ * `CLAIMED` with the worker id and a lease timestamp. Two workers must never receive the
+ * same row, and a worker that dies mid-send must not strand it: a `CLAIMED` row whose
+ * lease expired is claimable again.
+ *
+ * The returned job carries the attempts count **before** this claim, so retry backoff is
+ * computed from the same number in the fake and in MySQL.
  */
 interface DispatchQueueStore
 {
@@ -38,7 +41,10 @@ interface DispatchQueueStore
      *
      * @return list<DispatchJob>
      */
-    public function claimReady(\DateTimeImmutable $now, int $limit): array;
+    public function claimReady(\DateTimeImmutable $now, int $limit, ?string $workerId = null): array;
+
+    /** Link the one-time token that was minted for this job (nullable until the worker runs). */
+    public function attachToken(int $id, int $claimTokenId): void;
 
     public function markDispatched(int $id, \DateTimeImmutable $now): void;
 
