@@ -1,7 +1,13 @@
 import { useEffect, useMemo, useState } from 'react';
+import type { SceneDraft } from '../../src/services/scriptEngine';
 import { Button, Card, Kpi, Meter, Pill, hhmmss, num, pct } from '../ui';
 import { PublishDesk, type DlqRow, type QuotaView, type SlotView } from '../model/publishing';
 import { friendlyFailure, jobKindLabel, jobStateLabel, resetLabel } from '../model/labels';
+import { buildStudioModel } from '../model/studio';
+import { scanStudioModel } from '../model/compliance';
+
+const SEVERITY_LABEL = { block: '차단', warn: '주의', info: '참고' } as const;
+const SEVERITY_TONE = { block: 'bad', warn: 'warn', info: 'ghost' } as const;
 
 const CHANNEL_LABEL: Record<SlotView['channel'], string> = {
   'instagram-reels': '인스타그램 릴스',
@@ -15,8 +21,28 @@ const CHANNEL_COLOR: Record<SlotView['channel'], string> = {
 
 const PROVIDER_LABEL = { meta: '인스타그램', youtube: '유튜브' } as const;
 
-export function PublishingPanel() {
+export function PublishingPanel({
+  topic,
+  drafts,
+  durationSec,
+}: {
+  topic: string;
+  drafts: SceneDraft[];
+  durationSec: number;
+}) {
   const desk = useMemo(() => new PublishDesk(() => Date.now()), []);
+  // 발행 전 점검: 스튜디오에서 지금 만들고 있는 대본을 그대로 검사한다.
+  const scan = useMemo(() => {
+    const model = buildStudioModel({
+      topic,
+      durationSec,
+      speed: 1,
+      language: 'ko',
+      drafts,
+      compress: true,
+    });
+    return scanStudioModel(model);
+  }, [topic, drafts, durationSec]);
   const [slots, setSlots] = useState<SlotView[]>(desk.slots);
   const [quota, setQuota] = useState<QuotaView[]>(desk.quotas());
   const [dlqRows, setDlqRows] = useState<DlqRow[]>([]);
@@ -115,6 +141,50 @@ export function PublishingPanel() {
         />
       </div>
 
+      <Card
+        eyebrow="발행 전 자동 점검"
+        title={scan.ok ? '이 대본은 그대로 올릴 수 있습니다' : '올리기 전에 고칠 것이 있습니다'}
+        hint={`규제·금칙 표현 ${scan.rulesChecked}개와 9:16 안전영역(자막 폭·겹침)을 발행 버튼 전에 검사합니다. 지금 대본: «${topic}»`}
+        actions={
+          <Pill tone={scan.ok ? (scan.warnings > 0 ? 'warn' : 'ok') : 'bad'}>
+            {scan.ok ? (scan.warnings > 0 ? `주의 ${scan.warnings}건` : '통과') : `차단 ${scan.blocking}건`}
+          </Pill>
+        }
+      >
+        <p className="small muted" style={{ marginTop: 0 }}>
+          {scan.summary} · 문장 {scan.checkedTexts}개를 검사했습니다.
+          {scan.ok ? '' : ' 차단 항목을 고치기 전에는 아래 발행 버튼이 눌리지 않습니다.'}
+        </p>
+        {scan.findings.length === 0 ? (
+          <p className="note">걸린 표현이 없습니다. 그래도 최종 판단은 사람이 합니다 — 이 검사는 법률 검토가 아닙니다.</p>
+        ) : (
+          <table className="data">
+            <thead>
+              <tr>
+                <th>판정</th>
+                <th>종류</th>
+                <th>어디서</th>
+                <th>걸린 말</th>
+                <th>어떻게</th>
+              </tr>
+            </thead>
+            <tbody>
+              {scan.findings.map((finding) => (
+                <tr key={finding.id}>
+                  <td>
+                    <Pill tone={SEVERITY_TONE[finding.severity]}>{SEVERITY_LABEL[finding.severity]}</Pill>
+                  </td>
+                  <td className="small">{finding.label}</td>
+                  <td className="small muted">{finding.where}</td>
+                  <td className="small mono">{finding.matched}</td>
+                  <td className="small">{finding.suggestion}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </Card>
+
       <div className="grid two">
         <Card
           eyebrow="오늘 남은 발행량"
@@ -169,10 +239,10 @@ export function PublishingPanel() {
           hint="09:00–22:00 사이에 간격을 흔들어 배치했습니다 (매일 같은 시각은 스케줄러로 보입니다)"
           actions={
             <>
-              <Button small onClick={() => void publish()}>
+              <Button small disabled={!scan.ok} onClick={() => void publish()} title={scan.ok ? undefined : '발행 전 점검에서 차단 항목이 있습니다'}>
                 다음 예약 발행
               </Button>
-              <Button small primary disabled={busy} onClick={() => void drain()}>
+              <Button small primary disabled={busy || !scan.ok} onClick={() => void drain()}>
                 {busy ? '발행 중…' : '남은 예약 모두 발행'}
               </Button>
             </>

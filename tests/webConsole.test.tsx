@@ -44,6 +44,18 @@ async function click(label: string): Promise<void> {
 
 const text = (): string => (container.textContent ?? '').replace(/\s+/g, ' ');
 
+/** 스위치(체크박스)는 버튼이 아니라 label>input이라 따로 누른다. */
+async function toggle(label: string): Promise<void> {
+  const target = [...container.querySelectorAll('label.toggle')].find((candidate) =>
+    (candidate.textContent ?? '').replace(/\s+/g, ' ').includes(label),
+  );
+  const input = target?.querySelector('input[type="checkbox"]') as HTMLInputElement | null;
+  if (!input) throw new Error(`toggle not found: ${label}`);
+  await act(async () => {
+    input.click();
+  });
+}
+
 /** React 18 listens for the native input event, so set the value through the prototype. */
 async function typeInto(input: HTMLInputElement | HTMLTextAreaElement, value: string): Promise<void> {
   const prototype = input instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
@@ -149,6 +161,49 @@ describe('web console', () => {
     await click('댓글 넣기');
     await settle(600);
     expect(text()).toContain('받은 사람처럼 링크 열기');
+  });
+
+  it('shows the topic domain and offers the one-click edit package', async () => {
+    // 4비트 대본 머리의 도메인 표시(왜 이런 문장이 나왔는지)와 편집 패키지 버튼.
+    const topicInput = container.querySelector('input[type="text"]') as HTMLInputElement | null;
+    expect(topicInput).not.toBeNull();
+    await typeInto(topicInput!, '퇴사한 30대 개발자의 일상');
+
+    expect(text()).toContain('일상·브이로그');
+    expect(text()).toContain('편집 패키지');
+    expect(text()).toContain('.srt');
+    expect(text()).toContain('_컷타임시트.csv');
+  });
+
+  it('scans the script before publishing and gates the publish button', async () => {
+    await click('발행 캘린더 · 쿼터');
+    expect(text()).toContain('발행 전 자동 점검');
+    expect(text()).toMatch(/이 대본은 그대로 올릴 수 있습니다|올리기 전에 고칠 것이 있습니다/);
+    expect(text()).toContain('법률 검토가 아닙니다');
+    // 정상 대본이므로 발행 버튼이 눌린다.
+    const publishButton = findButton('다음 예약 발행') as HTMLButtonElement;
+    expect(publishButton.disabled).toBe(false);
+  });
+
+  it('applies the follower-only rule with a send interval from the coupon panel', async () => {
+    await click('댓글 → DM 쿠폰');
+    await toggle('팔로워만');
+    await click('10초');
+    await click('이 게시물에 규칙 적용');
+
+    expect(text()).toContain('팔로워로 확인된 사람만');
+    expect(text()).toContain('10초');
+
+    // 기본 데모 댓글은 '팔로워'로 표시되어 있으므로 발송된다.
+    await click('댓글 넣기');
+    await settle(600);
+    expect(text()).toContain('1회용 링크');
+
+    // 팔로워가 아닌 사람의 댓글은 건너뛴다.
+    await click('팔로워 아님');
+    await click('댓글 넣기');
+    await settle(50);
+    expect(text()).toContain('팔로워가 확인되지 않아 보내지 않았습니다');
   });
 
   it('shows the quota gauges and stops the queue when a platform limit is reached', async () => {

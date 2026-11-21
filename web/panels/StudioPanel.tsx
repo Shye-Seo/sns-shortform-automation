@@ -11,6 +11,7 @@ import { ANGLE_LIST } from '../../src/services/patternLibrary';
 import { resolveAngle } from '../../src/services/topicDraftWriter';
 import { Button, Card, Kpi, Pill, Toggle, clock, pct, sec } from '../ui';
 import { BEAT_HINT, BEAT_LABEL, buildStudioModel, cueAt, gainAt, sceneAt, type StudioModel } from '../model/studio';
+import { downloadEditPackage, editPackageFor } from '../model/editPackage';
 
 const ZONE_KO: Record<string, string> = {
   'top-bar': '상단 여백',
@@ -63,6 +64,7 @@ export function StudioPanel(props: StudioPanelProps) {
   const resolvedAngle = resolveAngle(angle, topic, variation);
   const activeAngleLabel = ANGLE_LIST.find((item) => item.id === resolvedAngle.id)?.label ?? resolvedAngle.label;
   const [safeArea, setSafeArea] = useState(true);
+  const [downloaded, setDownloaded] = useState(false);
   const [playing, setPlaying] = useState(false);
   const [t, setT] = useState(0);
   const tRef = useRef(0);
@@ -109,6 +111,14 @@ export function StudioPanel(props: StudioPanelProps) {
     tRef.current = 0;
     setT(0);
   }, [resetKey]);
+
+  const editPackage = useMemo(() => editPackageFor(model), [model]);
+
+  const saveEditPackage = (): void => {
+    const ok = downloadEditPackage(model);
+    setDownloaded(ok);
+    if (ok) window.setTimeout(() => setDownloaded(false), 2000);
+  };
 
   const cue = cueAt(model, t);
   const scene = sceneAt(model, t);
@@ -258,6 +268,13 @@ export function StudioPanel(props: StudioPanelProps) {
               <Button small onClick={onOpenPlan} ghost title="같은 주제로 롱폼·블로그까지 엮은 기획 보기">
                 크로스채널 기획
               </Button>
+              <Button
+                small
+                onClick={saveEditPackage}
+                title={`자막 .srt + 컷 타임시트 .csv/.txt를 zip 하나로 내려받습니다 (${editPackage.summary.files.length}개 파일)`}
+              >
+                {downloaded ? '내려받았습니다' : '편집 패키지'}
+              </Button>
               <Button small onClick={onRegenerate} primary title="새 앵글·새 문장으로 대본을 다시 뽑습니다">
                 대본 다시 생성
               </Button>
@@ -269,6 +286,12 @@ export function StudioPanel(props: StudioPanelProps) {
             <span className="small muted">
               {angle === 'auto' ? '자동 선택' : '직접 선택'} · {resolvedAngle.hookStyle} · 변주 {variation + 1}
             </span>
+            <Pill
+              tone="ghost"
+              title={`분류 근거: ${model.domain.evidence.join(' ') || '단서 없음'}`}
+            >
+              {model.domain.label}
+            </Pill>
             <Pill tone="ghost">{model.badgeText}</Pill>
           </div>
 
@@ -313,6 +336,12 @@ export function StudioPanel(props: StudioPanelProps) {
             </div>
             <Toggle checked={compress} onChange={onCompress} label="예산 초과 시 압축" />
           </div>
+
+          <p className="note" style={{ marginBottom: 10 }}>
+            편집 패키지: 자막 {editPackage.summary.cueCount}장 · 컷 {editPackage.summary.sceneCount}개 · 파일{' '}
+            {editPackage.summary.files.length}개({(editPackage.summary.totalBytes / 1024).toFixed(1)}KB). 내려받으면{' '}
+            {editPackage.summary.files.map((file) => file.name).join(', ')}가 zip 하나에 들어 있습니다.
+          </p>
 
           {model.compression.applied ? (
             <p className="note" style={{ marginBottom: 10 }}>

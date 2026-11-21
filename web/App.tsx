@@ -132,7 +132,7 @@ export function App() {
       ) : null}
 
       {tab === 'coupon' ? <CouponPanel /> : null}
-      {tab === 'calendar' ? <PublishingPanel /> : null}
+      {tab === 'calendar' ? <PublishingPanel topic={topic} drafts={drafts} durationSec={durationSec} /> : null}
       {tab === 'hooks' ? <HookPanel topic={topic} onAdopt={adoptHook} /> : null}
 
       <footer className="foot">

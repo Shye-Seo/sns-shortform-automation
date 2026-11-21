@@ -84,11 +84,17 @@ export function Meter({
 export function Pill({
   children,
   tone,
+  title,
 }: {
   children: ReactNode;
   tone?: 'ok' | 'warn' | 'bad' | 'ghost';
+  title?: string;
 }) {
-  return <span className={tone ? `pill ${tone}` : 'pill'}>{children}</span>;
+  return (
+    <span className={tone ? `pill ${tone}` : 'pill'} title={title}>
+      {children}
+    </span>
+  );
 }
 
 export function Button({
