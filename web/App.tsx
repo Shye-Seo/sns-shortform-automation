@@ -70,16 +70,15 @@ export function App() {
       <header className="masthead">
         <div>
           <p className="eyebrow">Shortform Studio</p>
-          <h1>숏폼 스튜디오 &amp; 크로스채널 기획 콘솔</h1>
+          <h1>숏폼 스튜디오</h1>
           <p>
-            주제 하나로 4비트 대본·타임라인·키네틱 자막을 다시 계산하고, 릴스·쇼츠·롱폼·블로그 패턴까지 엮어
-            기획합니다. 같은 대본을 릴스 캡션·쇼츠 설명·블로그/스레드 요약으로 한 번에 바꾸고, 인스타 댓글 →
-            5초 DM 쿠폰, 예약 발행 쿼터와 훅 패턴 비교도 같은 화면에서 확인합니다.
+            주제를 넣으면 대본·자막·장면 시간이 한 번에 잡히고, 같은 대본을 릴스·쇼츠·블로그용으로 바꿔 줍니다.
+            올린 뒤에는 댓글 쿠폰, 예약 발행 한도, 어떤 첫 문장이 잘 먹혔는지까지 이 화면에서 확인합니다.
           </p>
         </div>
         <div className="meta">
-          <Pill tone="ok">주제 변경 → 대본·자막 재계산</Pill>
-          <Pill tone="ghost">4비트 타임버짓 · 9:16 안전영역</Pill>
+          <Pill tone="ok">주제를 바꾸면 대본과 자막이 다시 계산됩니다</Pill>
+          <Pill tone="ghost">9:16 · 4장면 기준</Pill>
         </div>
       </header>
 
@@ -138,7 +137,8 @@ export function App() {
 
       <footer className="foot">
         <span>
-          발행 쿼터·실패·재시도 판정은 엔진이 실제로 계산한 결과를 그대로 보여 줍니다. 승인 게이트를 통과한 작업만 발행 큐에 들어갑니다.
+          화면의 판정(한도·실패·재시도)은 엔진이 실제로 계산한 결과입니다. 외부 플랫폼 연결 전에는 예시 데이터로 같은
+          계산을 보여 줍니다.
         </span>
         <span className="mono">
           <a href="https://github.com/Shye-Seo/sns-shortform-automation" rel="noreferrer noopener">

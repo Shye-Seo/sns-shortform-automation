@@ -55,6 +55,8 @@ function timecode(seconds: number): string {
   return `${String(Math.floor(total / 60)).padStart(2, '0')}:${String(total % 60).padStart(2, '0')}`;
 }
 
+const CHECK_KO: Record<string, string> = { CTA: '마지막 유도' };
+
 function FormatChecks({ format }: { format: OsmuFormat }) {
   return (
     <div className="row" style={{ gap: 6 }}>
@@ -69,7 +71,7 @@ function FormatChecks({ format }: { format: OsmuFormat }) {
           }
           title={check.label}
         >
-          {check.ok ? '✓' : '!'} {check.label.split(' ')[0]} {check.detail}
+          {check.ok ? '✓' : '!'} {CHECK_KO[check.label.split(' ')[0] ?? ''] ?? check.label.split(' ')[0]} {check.detail}
         </span>
       ))}
     </div>
@@ -163,7 +165,7 @@ export function OsmuPanel({ topic, drafts, durationSec, language = 'ko', onBackT
 
       <Card
         title="변환 결과"
-        hint={`${conversion.engineDetail} · 요약 포스트 대상 ${platform === 'threads' ? '스레드' : platform === 'tistory' ? '티스토리' : '네이버 블로그'}`}
+        hint={`스튜디오 대본에서 바로 계산했습니다 · 요약 포스트 대상 ${platform === 'threads' ? '스레드' : platform === 'tistory' ? '티스토리' : '네이버 블로그'}`}
         actions={
           <Button small primary onClick={() => copyOne(activeFormat)}>
             {copied === activeFormat.id ? '복사됨' : '이 포맷 복사'}

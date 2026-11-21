@@ -17,7 +17,16 @@ import { Button, Card, Kpi, Pill } from '../ui';
 
 const REF_CHANNELS: ChannelId[] = ['instagram-reels', 'youtube-shorts', 'youtube-longform', 'naver-blog', 'tistory', 'wordpress'];
 
-const BEAT_KO: Record<string, string> = { hook: '훅', problem: '문제', solution: '해결', cta: 'CTA' };
+const INTENT_KO: Record<string, string> = {
+  howto: '방법 설명',
+  review: '사용 후기',
+  checklist: '점검 목록',
+  compare: '비교',
+  story: '이야기',
+  info: '정보 정리',
+};
+
+const BEAT_KO: Record<string, string> = { hook: '훅', problem: '문제', solution: '해결', cta: '마지막 유도' };
 
 function copyText(text: string): void {
   const clipboard = (globalThis as { navigator?: { clipboard?: { writeText?: (value: string) => Promise<void> } } }).navigator?.clipboard;
@@ -135,7 +144,7 @@ export function CrossChannelPanel({ topic, onTopic, onBackToStudio }: CrossChann
         </div>
 
         <div className="grid kpi">
-          <Kpi label="분류" value={plan.profile.categoryLabel} sub={`${plan.profile.intent} · ${plan.profile.audience}`} />
+          <Kpi label="분류" value={plan.profile.categoryLabel} sub={`${INTENT_KO[plan.profile.intent] ?? '정보 정리'} · ${plan.profile.audience}`} />
           <Kpi label="앵글" value={plan.angle.label} sub={plan.angle.hookStyle} />
           <Kpi label="변주" value={`${plan.variation + 1}회`} sub="누를 때마다 앵글·문장 교체" />
           <Kpi
@@ -146,7 +155,7 @@ export function CrossChannelPanel({ topic, onTopic, onBackToStudio }: CrossChann
         </div>
 
         <p className="note" style={{ marginTop: 10, marginBottom: 0 }}>
-          엔진: {plan.engineDetail}. 배지 문구는 주제에서 뽑았습니다 — <strong>{plan.shorts.scenes[0]?.onScreenText ?? plan.profile.core}</strong>.
+          이 화면에서 바로 계산했습니다. 배지 문구는 주제에서 뽑았습니다 — <strong>{plan.shorts.scenes[0]?.onScreenText ?? plan.profile.core}</strong>.
           {analysis ? ' 레퍼런스의 훅 유형·단계 수·저장 유도 횟수를 앵글과 목차에 반영했습니다.' : ''}
         </p>
       </Card>
@@ -230,7 +239,7 @@ export function CrossChannelPanel({ topic, onTopic, onBackToStudio }: CrossChann
               </div>
             ) : (
               <p className="note" style={{ marginTop: 10, marginBottom: 0 }}>
-                텍스트만 분석합니다(외부 URL은 CLI에서: <span className="mono">shortform crosschannel --ref-url …</span>).
+                텍스트만 분석합니다(외부 링크는 개발자용 명령에서: <span className="mono">shortform crosschannel --ref-url …</span>).
                 브라우저는 다른 사이트를 읽을 수 없어 붙여넣기만 받습니다.
               </p>
             )}
@@ -244,7 +253,7 @@ export function CrossChannelPanel({ topic, onTopic, onBackToStudio }: CrossChann
                     <strong className="small">{pattern.label}</strong>
                     <div className="small muted">{pattern.appliedIn}</div>
                   </div>
-                  <Pill tone="ghost">{pattern.channel}</Pill>
+                  
                 </div>
               ))}
             </div>
@@ -366,7 +375,7 @@ export function CrossChannelPanel({ topic, onTopic, onBackToStudio }: CrossChann
             <div className="stack" style={{ gap: 8 }}>
               {plan.blog.outline.map((section) => (
                 <div key={section.heading} style={{ border: '1px solid var(--line)', borderRadius: 10, padding: 10 }}>
-                  <strong className="small">H2 · {section.heading}</strong>
+                  <strong className="small">소제목 · {section.heading}</strong>
                   <ul className="small" style={{ margin: '6px 0 0 16px', padding: 0 }}>
                     {section.points.map((point) => (
                       <li key={point}>{point}</li>
@@ -376,7 +385,7 @@ export function CrossChannelPanel({ topic, onTopic, onBackToStudio }: CrossChann
               ))}
             </div>
             <p className="note" style={{ marginTop: 10, marginBottom: 4 }}>
-              <strong>FAQ</strong>
+              <strong>자주 묻는 질문</strong>
             </p>
             <ul className="small" style={{ margin: '0 0 8px 16px', padding: 0 }}>
               {plan.blog.faq.map((entry) => (
@@ -397,14 +406,14 @@ export function CrossChannelPanel({ topic, onTopic, onBackToStudio }: CrossChann
             </div>
           </Card>
 
-          <Card title="리퍼포징 맵" hint="숏폼 장면이 어느 챕터와 어느 H2로 확장되는지">
+          <Card title="리퍼포징 맵" hint="숏폼 장면이 어느 챕터와 어느 소제목으로 이어지는지">
             <div className="scroll">
               <table className="data">
                 <thead>
                   <tr>
                     <th>숏폼</th>
                     <th>롱폼 챕터</th>
-                    <th>블로그 H2</th>
+                    <th>블로그 소제목</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -423,11 +432,11 @@ export function CrossChannelPanel({ topic, onTopic, onBackToStudio }: CrossChann
             </div>
           </Card>
 
-          <Card title="LLM 연결" hint="키가 있으면 같은 스키마로 Claude가 다시 씁니다. 없으면 위 결과가 최종입니다">
+          <Card title="AI 재작성 연결" hint="AI 키가 있으면 같은 형식으로 다시 쓰고, 없으면 위 결과가 최종입니다">
             <div className="row between" style={{ marginBottom: 8 }}>
               <span className="small muted">브라우저 내장 패턴 엔진으로 즉시 실행됩니다.</span>
               <Button small ghost onClick={() => setShowPrompt((value) => !value)}>
-                {showPrompt ? '프롬프트 닫기' : 'LLM 프롬프트 보기'}
+                {showPrompt ? '요청문 닫기' : 'AI 요청문 보기'}
               </Button>
             </div>
             <p className="note" style={{ marginTop: 0 }}>

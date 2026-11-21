@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { buildStudioModel, cueAt, draftBeatScene, gainAt, sceneAt } from '../web/model/studio';
-import { CAMPAIGN, CouponDesk } from '../web/model/coupon';
+import { DEFAULT_RULE, POSTS, CouponDesk } from '../web/model/coupon';
 import { PublishDesk } from '../web/model/publishing';
 import { AbTest } from '../web/model/abtest';
+import { friendlyFailure, jobStateLabel } from '../web/model/labels';
 
 /**
  * The demo console is a view over the engine, so the tests assert the engine's
@@ -85,12 +86,12 @@ describe('web coupon desk', () => {
 
     const first = await desk.claimDm(dm.jobId);
     expect(first.status).toBe('GRANTED');
-    expect(first.rewardAmount).toBe(CAMPAIGN.rewardAmount);
+    expect(first.rewardAmount).toBe(DEFAULT_RULE.rewardAmount);
 
     const second = await desk.claimDm(dm.jobId);
     expect(second.status).toBe('ALREADY_CLAIMED');
     expect(desk.poolGranted).toBe(1);
-    expect(desk.poolRemaining).toBe(CAMPAIGN.claimLimit - 1);
+    expect(desk.poolRemaining).toBe(DEFAULT_RULE.claimLimit - 1);
 
     const funnel = desk.funnel();
     expect(funnel.comments).toBe(1);
@@ -138,7 +139,7 @@ describe('web coupon desk', () => {
 
     expect(report.comments).toBe(1_000);
     expect(report.poolOversold).toBe(0);
-    expect(report.poolGranted).toBeLessThanOrEqual(CAMPAIGN.claimLimit);
+    expect(report.poolGranted).toBeLessThanOrEqual(DEFAULT_RULE.claimLimit);
     expect(report.dispatched).toBeGreaterThan(0);
     expect(report.abuseBlocked).toBeGreaterThan(0);
   });
@@ -214,5 +215,81 @@ describe('web hook A/B desk', () => {
       expect(arm.hookSeconds).toBeLessThanOrEqual(3.5);
       expect(arm.text.length).toBeGreaterThan(5);
     }
+  });
+});
+
+describe('per-post comment rules', () => {
+  it('answers only comments on the post the rule is bound to', async () => {
+    const desk = new CouponDesk(() => 1_763_700_000_000);
+    expect(desk.campaign.code).toBe('DROP-1120');
+
+    // 선택만 바꾸고 적용하지 않으면 이전 게시물의 규칙이 그대로 산다.
+    const applied = await desk.submitComment({ text: '쿠폰 주세요', handle: 'guri_home' });
+    expect(applied).toBeUndefined();
+    await desk.runWorkerCycle();
+    expect(desk.dms).toHaveLength(1);
+
+    desk.applyRule(POSTS[1]!, { ...DEFAULT_RULE, keywords: ['선물'] });
+    expect(desk.campaign.code).toBe('DROP-1118');
+    expect(desk.dms).toHaveLength(0);
+
+    await desk.submitComment({ text: '쿠폰 주세요', handle: 'guri_home' });
+    await desk.runWorkerCycle();
+    // 새 게시물의 키워드는 '선물'뿐이라 '쿠폰'은 지나간다.
+    expect(desk.dms).toHaveLength(0);
+    expect(desk.ingest.ignored).toBe(1);
+
+    await desk.submitComment({ text: '선물 받고 싶어요', handle: 'guri_home_2' });
+    await desk.runWorkerCycle();
+    expect(desk.dms).toHaveLength(1);
+  });
+
+  it('keeps the webhook body tied to the selected media id', () => {
+    const desk = new CouponDesk(() => 1_763_700_000_000);
+    desk.applyRule(POSTS[2]!, { ...DEFAULT_RULE });
+    const { payload } = desk.buildWebhook('쿠폰', 'author-9', 'guri_home_9');
+    const value = (payload as { entry: Array<{ changes: Array<{ value: { media: { id: string; media_product_type: string } } }> }> })
+      .entry[0]!.changes[0]!.value;
+    expect(value.media.id).toBe(POSTS[2]!.id);
+    expect(value.media.media_product_type).toBe('FEED');
+  });
+});
+
+describe('web labels', () => {
+  it('turns engine states and logs into Korean an operator can act on', () => {
+    expect(jobStateLabel('dlq', 'render').label).toBe('보류됨');
+    expect(jobStateLabel('failed', 'publish').label).toBe('업로드 실패');
+    const oom = friendlyFailure('ffmpeg exited with code 1 (out of memory)');
+    expect(oom.title).toContain('메모리');
+    expect(oom.hint).toContain('나눠');
+    const duration = friendlyFailure('Meta Graph API 400: video duration over platform limit');
+    expect(duration.title).toContain('길이');
+    // 모르는 오류는 영문 원문을 그대로 보여 주지 않는다.
+    const unknown = friendlyFailure('X-Error 9912: unknown encoder state');
+    expect(unknown.title).not.toContain('X-Error');
+    expect(unknown.hint).not.toMatch(/[A-Za-z]{4,}/);
+  });
+});
+
+describe('hook A/B collection scenarios', () => {
+  it('loads a period of collected statistics and lets the statistics decide', () => {
+    const test = new AbTest(TOPIC);
+    const first = test.loadScenario('first-3h', TOPIC);
+    expect(first.period).toBe('24h');
+    expect(test.evaluate().ready).toBe(false);
+
+    const week = test.loadScenario('week-1', TOPIC);
+    expect(week.period).toBe('7d');
+    expect(test.window).toBe('7d');
+    expect(test.arms[0]!.impressions).toBe(week.perArm);
+    expect(test.evaluate().winner).toBe('B');
+  });
+
+  it('does not invent a winner when the two hooks performed the same', () => {
+    const test = new AbTest(TOPIC);
+    test.loadScenario('flat-week', TOPIC);
+    const result = test.evaluate();
+    expect(result.ready).toBe(true);
+    expect(result.winner).toBeNull();
   });
 });

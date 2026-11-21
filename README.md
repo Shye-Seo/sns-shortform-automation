@@ -1,7 +1,7 @@
 <p align="center">
   <a href="https://github.com/Shye-Seo/sns-shortform-automation/actions/workflows/ci.yml"><img alt="CI Pipeline" src="https://github.com/Shye-Seo/sns-shortform-automation/actions/workflows/ci.yml/badge.svg" /></a>
-  <img alt="Tests" src="https://img.shields.io/badge/tests-633_(Vitest_508_%C2%B7_PHPUnit_125)-2E7D32?style=flat-square" />
-  <img alt="Web demo" src="https://img.shields.io/badge/web_demo-in_docs/(Pages_setup_needed)-13315C?style=flat-square" />
+  <img alt="Tests" src="https://img.shields.io/badge/tests-641_(Vitest_516_%C2%B7_PHPUnit_125)-2E7D32?style=flat-square" />
+  <img alt="Web demo" src="https://img.shields.io/badge/web_demo-live_(GitHub_Pages)-13315C?style=flat-square" />
 </p>
 
 # shortform-engine
@@ -12,7 +12,7 @@
 그것을 **수십 개 테넌트 · 수백 편 · 플랫폼 쿼터 안에서** 안정적으로 운영하는 것은
 완전히 다른 문제입니다. 이 저장소는 대규모 배포 환경의 안정성과 확장성 문제를 풉니다.
 
-`TypeScript` · `Node.js 20` · `ffmpeg` · `Vitest 508 tests` · `커버리지 88.7%`
+`TypeScript` · `Node.js 20` · `ffmpeg` · `Vitest 516 tests` · `커버리지 88.8%`
 `PHP 8.2` · `MySQL 8.0` · `Meta Graph API` · `NCP SENS 알림톡` · `PHPUnit 125 tests`
 
 | 계층 | 무엇을 보장하나 |
@@ -27,14 +27,15 @@
 | **서버 계층(DB·API)** | MySQL 8.0 기반 작업 원장 보존 및 PHP 백엔드 워커의 `SKIP LOCKED` 기반 동시성 경합 없는 작업 선점 |
 
 ```bash
-npm ci && npm run verify      # 508 tests, 네트워크·ffmpeg 없이
+npm ci && npm run verify      # 516 tests, 네트워크·ffmpeg 없이
 npm run cli -- studio         # 터미널 데모 콘솔
 npm run dev:web               # 브라우저 콘솔 → http://127.0.0.1:4173
 ```
 
-**웹 데모**: 정적 번들이 `docs/`에 빌드되어 있습니다. 저장소 Settings › Pages에서 소스를 `main` / `/docs`로
-지정하면 <https://shye-seo.github.io/sns-shortform-automation/> 에서 열립니다. 9:16 스튜디오 프리뷰,
-인스타 댓글 → DM 쿠폰, 예약 발행·쿼터·DLQ, 훅 A/B를 설치 없이 클릭으로 확인합니다(18장).
+**웹 데모**: <https://shye-seo.github.io/sns-shortform-automation/> — `main` / `/docs` 소스로 배포되어
+있습니다. 9:16 스튜디오, 게시물별 댓글 쿠폰 규칙, 예약 발행 한도, 훅 A/B 비교를 설치 없이 씁니다(18장).
+화면에는 엔진 상태값(`dlq`, `failed`)이나 영문 오류 로그를 그대로 그리지 않고, 그 뜻과 다음 할 일을
+한국어로 옮겨 보여 줍니다(`web/model/labels.ts`).
 
 ---
 
@@ -246,17 +247,18 @@ WATCH 연산을 직렬화하고, 노드를 늘릴 때는 **연결(인스턴스)�
 - **드레인 / 상시** — 야간 배치는 `drain({ waitForDelayed: true })`, 상시는 `start/stop`.
 - **stalled 복구** — lease 만료 job을 `active → delayed`로 되돌리고 attempts는 유지.
 
-실측 (`queue run --jobs 11 --concurrency 3 --fail-every 7`, 7번째 작업은 항상 실패 → 3회 시도 후 DLQ):
+실측 (`queue run --jobs 11 --concurrency 3 --fail-every 7`, 7번째 작업은 항상 실패 → 3회 시도 후 DLQ.
+처리 시간은 실행 환경에 따라 조금씩 다르고, 건수·DLQ는 같습니다):
 
 ```
-⚙ 큐 처리 시도 13건 (성공 10 / 실패 3) · 2235ms
-   최대 동시 워커 3 · 평균 처리 444ms · p95 479ms
+⚙ 큐 처리 시도 13건 (성공 10 / 실패 3) · 2286ms
+   최대 동시 워커 3 · 평균 처리 422ms · p95 493ms
    waiting 0 · delayed 0 · dlq 1
 
    워커별 부하:
-     worker-1    67%  완료 3 · 실패 1
-     worker-2    67%  완료 3 · 실패 2
-     worker-3    75%  완료 4 · 실패 0
+     worker-1    63%  완료 3 · 실패 1
+     worker-2    64%  완료 3 · 실패 2
+     worker-3    70%  완료 4 · 실패 0
 ```
 
 ---
@@ -266,11 +268,22 @@ WATCH 연산을 직렬화하고, 노드를 늘릴 때는 **연결(인스턴스)�
 | 다이얼 | 질문 | 회복 |
 |--------|------|------|
 | 토큰 버킷 | "지금 연속으로 몇 건까지?" | 초당 리필 |
-| 일일 쿼터 | "오늘 예산이 이 작업을 감당하나?" | 24시간 창 |
+| 일일 쿼터 | "오늘 예산이 이 작업을 감당하나?" | Meta: 지난 24시간 이동 창 · YouTube: 태평양 자정 |
 
 두 개를 분리한 이유는 **실패 모양이 다르기 때문**입니다. 버킷은 몇 분이면 회복되지만
-YouTube 일일 쿼터는 자정까지 회복되지 않습니다. 하나로 합치면 "5분 뒤"와 "내일 6시"를
-구분할 수 없습니다.
+YouTube 일일 쿼터는 태평양 자정(한국 시간 오후 4~5시)까지 회복되지 않습니다. 하나로 합치면
+"5분 뒤"와 "내일 아침"을 구분할 수 없습니다.
+
+리셋 규칙은 플랫폼마다 다르고, 코드(`DailyQuota`)가 그 차이를 그대로 가집니다.
+
+| 플랫폼 | 리셋 방식 | 구현 | 화면 표기 |
+|--------|-----------|------|-----------|
+| Meta Graph | 지난 24시간 동안 올린 건수가 25건을 넘으면 차단 (이동 창) | 사용 기록을 24시간씩 버리는 이동 창 | "N시간 M분 뒤 다시 채워짐" |
+| YouTube Data v3 | 태평양 자정에 10,000 unit으로 초기화 (캘린더 데이) | `America/Los_Angeles` 자정 기준 | 같은 문구, 시각은 PT 자정 기준 |
+
+프로세스가 켜진 시점부터 24시간을 세는 고정 창은 쓰지 않습니다. 재시작할 때마다 리셋 시각이
+달라져서 같은 날 두 번 한도가 차는 일이 생기기 때문입니다. 실제 플랫폼 카운터가 응답하면
+그 값이 최종이며, 여기 계산은 **보내기 전에 미리 막는 용도**입니다.
 
 | 플랫폼 | 버스트 | 지속 | 일일 | 작업 단가 |
 |--------|--------|------|------|-----------|
@@ -324,17 +337,18 @@ sequenceDiagram
 최소 간격에 가까울 때 클램프되어 "정확히 120분 간격"을 만들어 냅니다.
 
 ```
-발행 슬롯 6건 · 09:00~23:00 · 최소 60분
-   1. 10:24:21  (+0분)
-   2. 13:35:41  (+191분)
-   3. 16:16:21  (+161분)
-   4. 17:32:28  (+76분)
-   5. 18:34:30  (+62분)
-   6. 22:35:32  (+241분)
-  간격 평균 146분 · 표준편차 68분 · 규칙성 0.466
+발행 슬롯 6건 · 09:00~23:00 · 최소 90분
+   1. 09:20:22  (+0분)
+   2. 11:00:35  (+100분)
+   3. 15:50:18  (+290분)
+   4. 18:17:23  (+147분)
+   5. 20:42:19  (+145분)
+   6. 22:37:27  (+115분)
+  간격 평균 159분 · 표준편차 68분 · 규칙성 0.424
 ```
 
-`규칙성 = 표준편차/평균`. 0이면 기계, 1에 가까울수록 불규칙. 위 실행은 0.466입니다.
+`규칙성 = 표준편차/평균`. 0이면 기계, 1에 가까울수록 불규칙. 위는 `npm run cli -- slots --count 6
+--start 09:00 --end 23:00 --min-gap 90` 실행 예이고, 난수를 쓰므로 실행마다 값이 달라집니다.
 창이 최소 간격을 감당하지 못하면 **계획 단계에서 거부**합니다.
 
 ---
@@ -382,15 +396,16 @@ npm run cli -- hooks --topic "부산 신혼집 3평 주방 수납 정리법"
 `npm run cli -- studio` — 네트워크·ffmpeg 없이 내장 데모 상태로 실행됩니다.
 
 ```
-STUDIO CONSOLE  2026-11-11T00:47:55.079Z  [DEGRADED]
+STUDIO CONSOLE  2026-11-21T03:38:34.356Z  [DEGRADED]
 ──────────────────────────────────────────────────────────────────
-QUEUE  total 13  ok  83%  p95 133ms  retries 3
+QUEUE  total 13  ok  83%  p95 146ms  retries 3
        waiting   0  active   0  delayed   1  done  10  failed   1  dlq   1
+TREND  ▁▄▅▅▅▇▇▅▇▇▅▄▇▇█▄▅▅▅▄▄█▄▅██▄█▅█▅▁  0.00/s  fail 0.0%  · 61 samples / 5.0m (demo)
 ──────────────────────────────────────────────────────────────────
 WORKERS
-  worker-1   ██████████████████  98%  idle    ok 4 fail 3
-  worker-2   █████████████░░░░░  74%  idle    ok 3 fail 1
-  worker-3   █████████████░░░░░  73%  idle    ok 3 fail 0
+  worker-1   █████████████████░  94%  idle    ok 4 fail 3
+  worker-2   █████████████░░░░░  70%  idle    ok 3 fail 1
+  worker-3   █████████████░░░░░  70%  idle    ok 3 fail 0
 ──────────────────────────────────────────────────────────────────
 TENANT RATE LIMITS
   모닝픽쳐스 (대행사) (agency)
@@ -421,7 +436,7 @@ HOOK A/B
     winner: —  confidence 1.9%
 ──────────────────────────────────────────────────────────────────
 DEAD LETTER QUEUE  1 job(s) need a decision
-  job_007  agency-morning  render   attempts 3/3  waiting 2m 14s
+  job_007  agency-morning  render   attempts 3/3  waiting 0s
     render-episode-07  ·  encoder OOM (worker restarted)
   재시도/폐기: npm run cli -- queue replay <jobId> · studio --serve 로 열면 원클릭 버튼이 동작합니다
 ──────────────────────────────────────────────────────────────────
@@ -481,7 +496,7 @@ import { MetricsTimeSeriesChart } from 'shortform-engine/dist/studio/MetricsTime
 | `POST /v1/queue/dlq/:jobId/retry` | 재시도 (시도 횟수 초기화 후 `waiting`) |
 | `POST /v1/queue/dlq/:jobId/discard` | 폐기 (행 삭제, 이벤트 로그에 사유) |
 
-### 9.1 DLQ 원클릭 재시도 / 폐기 관리
+### 9.2 DLQ 원클릭 재시도 / 폐기 관리
 
 장애 발생 시 운영자가 신속하게 조치할 수 있도록, DLQ(Dead Letter Queue)에 격리된 실패 작업에 대한 원인 상세 조회 및 원클릭 재시도·폐기 관리 기능을 제공합니다.
 
@@ -599,8 +614,8 @@ npm run cli -- crosschannel --topic "냉장고 재료로 10분 저녁" --llm --o
 ## 12. 검증
 
 ```bash
-npm run verify    # typecheck + typecheck:web + lint + 508 tests
-npm run coverage  # 88.7% statements · 81.4% branches
+npm run verify    # typecheck + typecheck:web + lint + 516 tests
+npm run coverage  # 88.8% statements · 81.5% branches
 ```
 
 | 영역 | 파일 | 건수 |
@@ -608,7 +623,7 @@ npm run coverage  # 88.7% statements · 81.4% branches
 | 큐 (우선순위·백오프·DLQ·lease·멱등·파일저장소) | `queue.test.ts` | 36 |
 | DLQ 재시도/폐기·조작 API·콘솔 서버 (실제 HTTP) | `dlqConsole.test.ts` | 23 |
 | 워커 풀 (동시성 상한·재시도·진행률·부하) | `workerPool.test.ts` | 18 |
-| 레이트 리밋 (버스트·리필·격리·unit 계산) | `rateLimit.test.ts` | 21 |
+| 레이트 리밋 (버스트·리필·격리·unit 계산·이동 창/캘린더 데이 리셋) | `rateLimit.test.ts` | 23 |
 | OAuth (single-flight·로테이션·영구오류) | `oauth.test.ts` | 14 |
 | 발행 슬롯 (창·간격·분경계·재현성) | `publishSlots.test.ts` | 11 |
 | 텔레메트리 (생성·멱등·집계·검정·피드백) | `telemetry.test.ts` | 35 |
@@ -617,21 +632,47 @@ npm run coverage  # 88.7% statements · 81.4% branches
 | **시계열 메트릭 (차분·링버퍼·토큰 합계·차트 기하·SVG 이스케이프·데모 이력)** | `metricsTimeSeries.test.ts` · `metricsChart.test.tsx` | **21 + 3** |
 | 기존 파이프라인 (대본·자막·더킹·렌더·게시) | 8개 파일 | 147 |
 | 해시 원시함수 (SHA-1·SHA-256·HMAC 벡터 + `node:crypto` 대조) | `hash.test.ts` | 9 |
-| 웹 콘솔 모델 (타임라인·더킹·댓글 DM·쿼터·A/B) | `webModels.test.ts` | 13 |
-| 웹 콘솔 클릭 (jsdom: 패널 전환·댓글→DM→수령·쿼터 중단·OSMU 탭·훅 패턴 표) | `webConsole.test.tsx` | 6 |
+| 웹 콘솔 모델 (타임라인·더킹·게시물별 댓글 규칙·쿼터·A/B 시나리오·표시 문구) | `webModels.test.ts` | 18 |
+| 웹 콘솔 클릭 (jsdom: 패널 전환·댓글→DM→수령·게시물 규칙 적용·쿼터 중단·OSMU 탭·훅 패턴 표) | `webConsole.test.tsx` | 9 |
 | **OSMU 변환 (대본→3포맷·글자 상한·해시태그 규칙·스레드 분할·훅 경고)** | `osmu.test.ts` | **12** |
 | **훅 패턴 비교 (기준선·카테고리 배수·훅 길이 감점·리더 판정)** | `hookPatternSim.test.ts` | **9** |
 | **쿼터 인지 발행 계획 (창 경계·예산 소진·우선순위·슬롯·최소 간격·지평 넘김)** | `quotaPlanner.test.ts` | **22** |
+| 인터랙티브 쿠폰 엔진 (멱등·어뷰징·5초 데드라인·1회용 토큰·풀 경합·1,000건) | `interactiveCouponDispatcher.test.ts` | 39 |
+| 크로스채널 기획 (카테고리·앵글 변주·채널 구조·리퍼포징 순서) | `crossChannel.test.ts` | 22 |
+| 인터랙티브 콘솔 (React: 수령·퍼널 카드) | `interactiveConsole.test.tsx` | 2 |
+| **합계** | 28개 파일 | **516** |
 
 네트워크·ffmpeg 없이 전부 통과합니다. 외부 API는 fake HTTP와 주입된 리프레셔로,
 재시도는 주입된 시계·sleep으로 검증합니다.
+
+### 12.1 전수 검수 실행 기록 (2026-11-21)
+
+문서에 적은 숫자를 실제 실행으로 다시 확인한 기록입니다. 실행 환경에 따라 시간 값만 달라지고,
+건수·판정은 같습니다.
+
+| 검수 항목 | 실행 | 결과 |
+|-----------|------|------|
+| 타입·린트·단위 테스트 | `npm run verify` | ✅ 28개 파일 516건 통과 |
+| 커버리지 | `npm run coverage` | 88.79% statements · 81.46% branches |
+| 실제 렌더 | `craft → review --approve → render --execute` (ffmpeg 7.0.2) | ✅ 1080×1920 · 33.13s · 1.2MB · 프리플라이트 12/13(경고 1) |
+| 큐·워커 | `queue run --jobs 11 --concurrency 3 --fail-every 7` | ✅ 시도 13 · 성공 10 · DLQ 1 · 최대 동시 워커 3 |
+| MySQL 스키마 | `php bin/migrate.php --fresh --seed --verify` | ✅ 12개 테이블 · 인덱스·FK 확인 |
+| PHP 단위·통합 | `composer test` (MySQL 8.0.40 연결) | ✅ 125건 · 377 assertions (DB 없으면 112 + 13 skip) |
+| 렌더 큐 워커 | `php bin/worker.php --once` | ✅ job #1 선점 → 완료 → 큐 현황 출력 |
+| HTTP 서버 | `php -S` 후 `/health`·웹훅 | ✅ `/health` 200, `GET /webhooks/instagram` 챌린지 반환, 서명 위조 403 |
+| 게시물 발행 웹훅 | 서명된 `media` 이벤트 전송 | ✅ `applied 1` 후 `publish_logs.status=published`, 재전송은 `duplicates 1` |
+| 댓글 웹훅 | 서명된 `comments` 이벤트 전송 | ⚠️ `ignored 1` — 댓글 분기가 없어 처리되지 않음(§17.8) |
+| 정적 웹 콘솔 | `npm run build:web` → 로컬 서버 | ✅ 탭 6개 렌더·클릭 동작, 콘솔 오류 0 |
+| 라이브 배포 | <https://shye-seo.github.io/sns-shortform-automation/> | ✅ HTTP 200 |
 
 ---
 
 ## 13. 실제 렌더 검증
 
 `docs/demo.mp4`는 이 파이프라인이 실제로 인코딩한 결과물입니다 (ffmpeg 6.0, 1080×1920,
-33.13s, 1.2MB). 아래 프레임은 그 영상에서 추출했습니다.
+33.13s, 1.2MB). 아래 프레임은 그 영상에서 추출했습니다. 2026-11-21에 ffmpeg 7.0.2로 같은
+`craft → review --approve → render --execute`를 다시 돌려 같은 결과(33.13s · 1.2MB · 12/13
+통과 · 비트레이트 경고 1)가 나오는 것을 확인했습니다.
 
 | 훅 (0.0s) | 본문 (12s) | CTA (31s) |
 |:---:|:---:|:---:|
@@ -654,7 +695,7 @@ npm run coverage  # 88.7% statements · 81.4% branches
 | 항목 | 상태 |
 |------|------|
 | 큐 상태머신·재시도·DLQ·lease | ✅ 구현·테스트 (MySQL 8.0 `SKIP LOCKED` 기반 분산 큐 및 단일 프로세스 메모리 큐) |
-| MySQL 영속 큐 & PHP 백엔드 | ✅ Modern PHP 8.2 OOP + MySQL 8.0 DDL/ERD 7개 테이블 구현·테스트 |
+| MySQL 영속 큐 & PHP 백엔드 | ✅ Modern PHP 8.2 OOP + MySQL 8.0 DDL 12개 테이블 구현. MySQL 8.0.40에서 마이그레이션·워커·통합 테스트 125건 실행 확인 |
 | 웹훅 수신 & 서명 검증 | ✅ Meta Graph API `X-Hub-Signature-256` HMAC-SHA256 (`hash_equals`) 보안 검증 미들웨어 구현·테스트 |
 | DLQ 콘솔 UI | ✅ 웹 콘솔 DLQ 재시도 및 폐기 인터페이스 (`POST /v1/queue/dlq/{id}/retry|discard`) 구현·테스트 |
 | 토큰 버킷·일일 쿼터·격리 | ✅ 구현·테스트 |
@@ -662,8 +703,9 @@ npm run coverage  # 88.7% statements · 81.4% branches
 | 지터 스케줄 | ✅ 계획·통계 검증. 실제 발행과의 상관 미측정 |
 | A/B 통계 | ✅ 구현·테스트. 실제 플랫폼 웹훅 연동은 스키마 수신 단계 |
 | 콘솔/API | ✅ text·HTML·Prometheus·JSON 서빙 및 DLQ 액션 API 연동 |
-| 60초 렌더 파이프라인 | ✅ ffmpeg 6.0 실제 인코딩·프리플라이트 통과 |
+| 60초 렌더 파이프라인 | ✅ ffmpeg 실제 인코딩·프리플라이트 통과 (6.0 산출물, 7.0.2 재현 확인) |
 | 웹 데모 콘솔 (GitHub Pages) | ✅ 정적 번들이 엔진 모듈을 그대로 실행. Meta·YouTube·Redis·SENS 실호출은 없음 |
+| 인스타 댓글 웹훅 → PHP | ⚠️ 서비스 계층(`InteractiveCouponDispatcher.php`)과 저장소 인터페이스·단위 테스트는 있지만, **HTTP 라우트와 DB 어댑터가 아직 연결되지 않았습니다**. `/webhooks/instagram`은 지금 게시물 발행 알림(`media`)만 처리하고 댓글(`comments`)은 무시합니다. 연결에 필요한 것은 §17.8 |
 
 **로드맵**:
 - [x] MySQL 8.0 `SKIP LOCKED` 기반 분산 비동기 렌더 큐 백엔드 (PHP 8.2)
@@ -690,11 +732,13 @@ platform built on a working 60-second shortform pipeline.
   is enforced by tests.
 - **Rate limiting** — token bucket (burst + sustained) and daily quota (units) are separate dials
   because they recover differently: Meta 25 publishes/24h, YouTube 10,000 units/day at 1,600
-  units per upload. Buckets and quotas are per tenant, so one agency cannot delay another.
+  units per upload. Meta's budget is a rolling 24-hour window; YouTube's resets at Pacific
+  midnight. Buckets and quotas are per tenant, so one agency cannot delay another.
 - **OAuth** — refresh-ahead, single-flight refresh (30 concurrent publishes → 1 token call),
   refresh-token rotation, and permanent vs transient failure classification.
 - **Jitter scheduling** — bucket-uniform slots with a minute-grid guard and a minimum gap;
-  the measured gap coefficient of variation is 0.51, not the 0.0 of a cron fingerprint.
+  the measured gap coefficient of variation is 0.42 in the sample run above, not the 0.0 of a
+  cron fingerprint.
 - **Hook A/B** — deduplicated webhook ingestion, Wilson intervals, leader-vs-runner-up z-test,
   a sample floor, a 5% lift floor, and a lift-based softmax feedback loop with an 8%
   exploration floor.
@@ -703,7 +747,7 @@ platform built on a working 60-second shortform pipeline.
 - **Quota planning** — pending jobs get concrete publish times under a fixed daily budget:
   spillover moves to the next window instead of failing, slot windows and a minimum gap are
   applied at the same time, and priority decides who keeps their preferred time.
-- **Verification** — 508 Vitest cases, 88.7% statement coverage, no network and no ffmpeg
+- **Verification** — 516 Vitest cases, 88.8% statement coverage, no network and no ffmpeg
   required (injected clock, RNG, sleep, HTTP and token refresher).
 
 ```bash
@@ -749,7 +793,7 @@ flowchart LR
 
 | 계층 | 무엇을 보장하나 |
 | --- | --- |
-| **DB (7 테이블)** | 큐 상태·lease·전이 이력·발행 3단계·쿼터·알림 도달이 모두 행으로 남는다 |
+| **DB (12 테이블)** | 1부 7개(큐·발행·알림) + 2부 5개(캠페인·웹훅 이벤트·발송 큐·1회용 토큰·전환). 큐 상태·lease·전이 이력·쿼터·알림 도달이 모두 행으로 남는다 |
 | **큐 선점** | `ORDER BY priority DESC, available_at, id LIMIT 1 FOR UPDATE SKIP LOCKED` — 워커 10개가 같은 행에 줄 서지 않는다 |
 | **장애 복구** | lease 만료 = 죽은 워커의 작업. 회수해서 `delayed`(또는 `dlq`)로 되돌린다 |
 | **재시도 분류** | `retryable`이 상태를 정한다: 지수 백오프 재시도 / 즉시 실패 / DLQ |
@@ -763,9 +807,9 @@ flowchart LR
 ```bash
 docker compose up -d mysql
 cd backend && composer install
-php bin/migrate.php --fresh --seed --verify     # 7 테이블 · 인덱스 · FK 확인
+php bin/migrate.php --fresh --seed --verify     # 12 테이블 · 인덱스 · FK 확인
 php bin/worker.php --once                       # 선점 → 진행률 → 완료 → 큐 현황
-composer test                                   # 125 tests (단위 112 + MySQL 실연동 13 skip)
+composer test                                   # 125 tests (단위 112 + MySQL 실연동 13). DB가 없으면 13건 skip
 ```
 
 **문서**
@@ -894,6 +938,20 @@ npx tsx -e "...simulateCommentStorm({ comments: 1000, concurrency: 256, clickRat
 
 ### 17.8 정직한 경계
 
+- **댓글 웹훅은 아직 HTTP로 연결되어 있지 않습니다.** PHP 쪽 `InteractiveCouponDispatcher`는
+  서명 확인 → 파싱 → 캠페인·키워드 매칭 → 멱등 INSERT → 어뷰징 점수 → 큐 적재 순서를 실제로
+  구현했고 단위 테스트가 덮습니다. 그러나 `public/index.php`의 `/webhooks/instagram`은 지금
+  **게시물 발행 알림(`field: media`)만** 처리합니다. 댓글(`field: comments`)을 이 서비스로 넘기는
+  라우트가 없고, `CampaignCatalog`·`InteractionEventStore`·`DispatchQueueStore`·`ClaimTokenStore`는
+  인터페이스만 있으며 MySQL 어댑터가 없습니다. 그래서 "PHP가 댓글을 받아 DM을 보낸다"는 문장은
+  아직 사실이 아닙니다.
+- **연결에 필요한 작업은 네 가지입니다.**
+  1. `PublishWebhookController`에 `comments` 분기(또는 별도 컨트롤러)를 추가해 `handleWebhook()`으로 전달
+  2. 위 4개 인터페이스의 MySQL 구현(`FOR UPDATE SKIP LOCKED`로 `dispatch_queue` 선점)
+  3. `bin/coupon-worker.php` — `dispatchPending()`을 주기적으로 호출하는 워커
+  4. `NotificationSender` 구현(IG DM API 또는 SENS)과 자격 증명
+  화면(18장)의 3단계 안내가 이 순서를 그대로 보여 주고, 연결 전에는 같은 엔진을 브라우저에서
+  돌려 흐름을 확인합니다.
 - **실발송은 검증 범위 밖**입니다. Meta DM·네이버클라우드 SENS 실호출은 자격 증명이 없어, 어댑터
   인터페이스·서명 벡터·실패 분류까지가 검증 범위입니다.
 - **HMAC-SHA256은 양쪽 구현이 같은 함수**임을 테스트 벡터로 확인했습니다(TS 구현이 RFC 벡터와 일치,
@@ -907,23 +965,22 @@ npx tsx -e "...simulateCommentStorm({ comments: 1000, concurrency: 256, clickRat
 
 **데모**: <https://shye-seo.github.io/sns-shortform-automation/>
 
-빌드된 정적 산출물이 `docs/`에 있습니다. 저장소 Settings › Pages에서 소스를 `main` / `/docs`로 지정하면
-위 주소에서 열립니다(연결 앱 권한상 Pages 설정 API는 403이라 저장소 소유자가 한 번 지정해야 합니다).
-설치 없이 열리고, 클릭으로 동작합니다. 화면의 숫자는 미리 만들어 둔 값이 아니라 브라우저에서 같은
-엔진 모듈을 실행한 결과입니다.
+빌드된 정적 산출물이 `docs/`에 있고, 저장소 Pages 소스가 `main` / `/docs`로 설정되어 위 주소가
+실제로 열립니다(2026-11-21 HTTP 200 확인). 설치 없이 열리고, 클릭으로 동작합니다. 화면의 숫자는
+미리 만들어 둔 값이 아니라 브라우저에서 같은 엔진 모듈을 실행한 결과입니다.
 
-> 화면 표기 원칙: 콘솔 UI에는 벤더 자격 증명 유무·내부 클래스/이벤트 코드·스텁 여부를 표시하지 않습니다.
-> 이 콘솔은 Meta·YouTube·Redis·SENS 실호출 자격 증명 없이 동작하며, 그 범위는 이 README(§14 검증 범위)에만 적습니다.
-> 발행·쿼터·DLQ 판정은 엔진이 실제로 계산한 결과를 그대로 보여 줍니다.
+> 화면 표기 원칙: 엔진 상태값(`dlq`, `failed`)과 영문 오류 로그는 화면에 그대로 그리지 않습니다.
+> `web/model/labels.ts`가 그 뜻과 다음 할 일을 한국어로 옮기고, 모르는 오류는 원문 대신
+> "원인을 확인하지 못했습니다"로 끝냅니다. 판정(한도·실패·재시도)은 엔진이 계산한 값을 그대로 씁니다.
 
 | 탭 | 확인하는 것 | 실행되는 코드 |
 |----|------------|---------------|
 | **9:16 스튜디오** | 주제를 바꾸면 대본·타임라인·자막이 즉시 다시 계산. '대본 다시 생성'은 앵글과 문장을 함께 교체. 안전영역 가이드, 재생 위치에 맞춘 단어별 자막 강조, 발화 시 BGM 15% 감쇠 곡선 | `topicProfile`(분류), `topicDraftWriter`(주제·앵글별 대본), `scriptEngine`(`planTimeBudget`·`fitDrafts`·`buildTimeline`), `tts.estimateAlignmentFor`, `audioEngine`(`computeDuckingEnvelope`·`buildCues`), `videoCompositor`(`planOverlayLayout`·`checkLayoutCollisions`) |
 | **크로스채널 기획** | 주제 하나로 릴스/쇼츠 대본 + 유튜브 롱폼 목차 + 네이버·티스토리·워드프레스 글 뼈대를 같은 단계 순서로 생성. 레퍼런스 글을 붙이면 훅 유형·단계 수·저장 유도를 읽어 앵글과 목차에 반영하고, 숏폼→챕터→H2 리퍼포징 맵을 표로 보여줌 | `topicProfile`, `patternLibrary`(6개 채널 구조), `contentAnalyzer`, `crossChannelPlanner`, `planMarkdown` |
-| **댓글 → DM 쿠폰** | 테스트 댓글 입력 → HMAC 서명 검증 → 큐 적재 → 어뷰징 차단 → 5초 안에 1회용 링크 발급 → 수령(1회) → 퍼널·ROAS | `core/interactiveCouponDispatcher` 전체 (워커 일시정지로 SLA 초과도 재현) |
-| **발행 캘린더 · 쿼터** | 지터가 들어간 예약 타임라인, Meta 25건/24h·YouTube 10,000 unit(업로드 1,600) 게이지, 한도 소진 시 발행 중단, DLQ 원클릭 재시도와 운영자 기록 | `rateLimit/jitter.planPublishSlots`, `rateLimit/tenantRegistry`, `queue/jobQueue`, `studio/dlqActions` |
+| **댓글 → DM 쿠폰** | ① 게시물(릴스·피드) 선택 → ② 키워드·보상·수량·유효시간 규칙 적용 → ③ 웹훅 연결 3단계 안내(콜백 주소·구독 항목·서버 처리 순서) → ④ 받은 댓글·보낸 DM·퍼널. 다른 게시물의 댓글은 같은 계정이라도 반응하지 않고, 연결 전에는 같은 엔진에 시험 댓글을 넣어 확인 | `core/interactiveCouponDispatcher` 전체(서명 검증·멱등·어뷰징·5초 데드라인·1회용 토큰·퍼널), `web/model/coupon.ts`(게시물별 캠페인) |
+| **발행 캘린더 · 쿼터** | 지터가 들어간 예약 타임라인, 인스타그램 25건/24시간·유튜브 10,000할당량 게이지, 한도 소진 시 발행 중단, 실패 작업 재시도/정리와 운영자 기록 | `rateLimit/jitter.planPublishSlots`, `rateLimit/tenantRegistry`(이동 창·캘린더 데이 리셋), `queue/jobQueue`, `studio/dlqActions`, `web/model/labels`(사유 번역) |
 | **OSMU 변환** | 스튜디오의 4비트 대본을 릴스 캡션·쇼츠 설명(비트 타임라인 포함)·블로그/스레드 요약으로 동시 변환. 글자 상한과 작성 규칙을 체크로 표시하고, 스레드는 500자 단위로 분할해 각각 복사 | `osmuConverter`(`buildBeatTimeline`·`buildHashtags`·`splitForThreads`), `scriptEngine` 대본, `topicProfile`, `topicBanks` |
-| **훅 A/B** | 같은 영상의 A/B 훅을 노출·3초 유지·완시·댓글·쿠폰 전환으로 비교, 표본 부족 시 판정 보류, 승자 채택 시 스튜디오 대본에 반영. 같은 주제의 훅 4유형(질문·숫자·반전·체크리스트) 예상 저장·공유 전환도 함께 비교 | `telemetry/hooks.generateHookVariants`, `telemetry/significance`(`evaluateExperiment`·`twoProportionZTest`·`wilsonInterval`·`requiredSampleSize`), `hookPatternSim` |
+| **훅 A/B** | 수집 주기(1시간·6시간·하루)와 비교 기간(24시간·7일)을 고르고, 수집이 끝난 상태를 시나리오 4종(3시간·24시간·7일·차이 없던 주)으로 재현. 끝까지 본 비율·쿠폰 사용을 같은 통계로 비교하고, 표본이 부족하거나 차이가 우연이면 승자를 부르지 않음. 승자 채택 시 스튜디오 대본에 반영. 같은 주제의 훅 4유형 추정치도 함께 비교 | `telemetry/hooks.generateHookVariants`, `telemetry/significance`(`evaluateExperiment`·`twoProportionZTest`·`wilsonInterval`·`requiredSampleSize`), `hookPatternSim`, `web/model/abtest`(시나리오) |
 
 <table>
   <tr>
@@ -968,8 +1025,8 @@ npm run typecheck:web # 타입 검사 (src + web, DOM lib 포함)
 | 파일 | 건수 | 내용 |
 |------|------|------|
 | `tests/hash.test.ts` | 9 | SHA-1/SHA-256/HMAC 벡터, `node:crypto` 대조, 55바이트 경계, `createHash` 표면 |
-| `tests/webModels.test.ts` | 13 | 타임라인 합계·3.5초 훅·자막 폭·더킹 15/55%·편집 문장 보존·댓글 1건→DM 1건·도배 차단·5초 초과 DLQ·1,000건 오버이슈 0·쿼터 소진·DLQ 재시도·A/B 판정 |
-| `tests/webConsole.test.tsx` | 6 | jsdom에서 실제 클릭: 스튜디오 렌더, 댓글→DM→수령, 쿼터 중단, A/B 표본 수집, OSMU 3포맷 전환, 훅 패턴 표 |
+| `tests/webModels.test.ts` | 18 | 타임라인 합계·3.5초 훅·자막 폭·더킹 15/55%·편집 문장 보존·댓글 1건→DM 1건·도배 차단·5초 초과 DLQ·1,000건 오버이슈 0·쿼터 소진·DLQ 재시도·A/B 판정·게시물별 규칙 분리·표시 문구 번역·시나리오 판정 |
+| `tests/webConsole.test.tsx` | 9 | jsdom에서 실제 클릭: 스튜디오 렌더, 댓글→DM→수령, 게시물 규칙 적용, 쿼터 중단, A/B 기간 전환, OSMU 3포맷 전환, 훅 패턴 표 |
 | `tests/osmu.test.ts` | 12 | 편집한 대본이 캡션에 반영 · 릴스 5~8태그·저장 CTA · 쇼츠 제목 40자·타임라인 오름차순 · 스레드 500자 분할 · 훅 3.5초 경고 |
 | `tests/hookPatternSim.test.ts` | 9 | 4유형 순서·범위 · 저장/공유 리더 1개씩 · 3초 초과 감점 · 숫자 주제 보정 · 결정성 |
 
@@ -1025,7 +1082,7 @@ npm run cli -- quota plan --provider youtube --jobs 8 --slot-start 08:00 --slot-
 | **최소 간격** | 같은 창에서 두 편이 붙어 알고리즘 피드백을 오염 | `minGapMs` 안에 겹치면 뒤로 밀기 (`gap-shifted`) |
 
 우선순위가 높은 작업이 먼저 자리를 잡고, 같은 우선순위면 희망 시각이 이른 순서, 그것도 같으면
-작전 id 순서입니다. 같은 입력이면 항상 같은 계획이 나오므로(순수 함수) 결과를 테스트로 고정합니다.
+작업 id 순서입니다. 같은 입력이면 항상 같은 계획이 나오므로(순수 함수) 결과를 테스트로 고정합니다.
 
 ### 19.2 테넌트의 현재 소비 상태에서 시작
 

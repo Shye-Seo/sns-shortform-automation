@@ -12,6 +12,12 @@ import { resolveAngle } from '../../src/services/topicDraftWriter';
 import { Button, Card, Kpi, Pill, Toggle, clock, pct, sec } from '../ui';
 import { BEAT_HINT, BEAT_LABEL, buildStudioModel, cueAt, gainAt, sceneAt, type StudioModel } from '../model/studio';
 
+const ZONE_KO: Record<string, string> = {
+  'top-bar': '상단 여백',
+  'caption-sheet': '자막 영역',
+  'action-rail': '버튼 영역',
+};
+
 const FONT_CQW = (px: number): string => `${((px / CANVAS.width) * 100).toFixed(3)}cqw`;
 const pctX = (value: number): string => `${((value / CANVAS.width) * 100).toFixed(3)}%`;
 const pctY = (value: number): string => `${((value / CANVAS.height) * 100).toFixed(3)}%`;
@@ -135,7 +141,7 @@ export function StudioPanel(props: StudioPanelProps) {
                         height: pctY(zone.rect.h),
                       }}
                     >
-                      {zone.name}
+                      {ZONE_KO[zone.name] ?? '안전 여백'}
                     </div>
                   ))}
                   <div
@@ -185,7 +191,7 @@ export function StudioPanel(props: StudioPanelProps) {
 
               <div className="duck">
                 <span className="dot" style={{ background: ducked ? '#ffd166' : '#7ce0b4' }} />
-                BGM {Math.round(gain * 100)}% {ducked ? '· 발화 중' : '· 쉼'}
+                배경음악 {Math.round(gain * 100)}% {ducked ? '· 말하는 중' : '· 쉬는 중'}
               </div>
             </div>
 
@@ -209,7 +215,7 @@ export function StudioPanel(props: StudioPanelProps) {
           </div>
         </Card>
 
-        <Card title="오디오 더킹" hint="발화 구간 BGM 15%, 쉼 55% — 어택·릴리즈 램프까지 엔진 값">
+        <Card title="오디오 더킹" hint="말하는 구간은 배경음악 15%, 쉬는 구간은 55% — 올리고 내리는 곡선까지 엔진 값">
           <EnvelopeChart model={model} t={t} />
           <div className="row between" style={{ marginTop: 8 }}>
             <span className="small muted">
@@ -239,7 +245,7 @@ export function StudioPanel(props: StudioPanelProps) {
           <Kpi
             label="자막 카드"
             value={`${model.cues.length}장`}
-            sub={`가장 긴 줄 ${model.widestCueWidthPx}px / 박스 ${Math.round(model.layout.caption.w)}px`}
+            sub={`가장 긴 줄 ${model.widestCueWidthPx} / 한도 ${Math.round(model.layout.caption.w)}`}
             tone={model.widestCueWidthPx > model.layout.caption.w ? 'warn' : undefined}
           />
         </div>
@@ -439,13 +445,13 @@ export function StudioPanel(props: StudioPanelProps) {
             </div>
           </Card>
 
-          <Card title="안전영역 검증" hint="플랫폼 UI(상단 바·캡션 시트·액션 레일)와의 충돌 검사">
+          <Card title="안전영역 검증" hint="플랫폼이 가리는 영역(상단 여백·자막 영역·버튼 영역)과 겹치는지 검사합니다">
             <div className="row" style={{ marginBottom: 10 }}>
               <Pill tone={model.collisions.ok ? 'ok' : 'bad'}>
                 {model.collisions.ok ? '충돌 없음' : `충돌 ${model.collisions.violations.length}건`}
               </Pill>
               <span className="small muted">
-                콘텐츠 박스 {Math.round(model.layout.contentBox.w)}×{Math.round(model.layout.contentBox.h)}px
+                콘텐츠 영역 {Math.round(model.layout.contentBox.w)}×{Math.round(model.layout.contentBox.h)}
               </span>
             </div>
             <div className="bars">
@@ -462,7 +468,7 @@ export function StudioPanel(props: StudioPanelProps) {
                       <span style={{ width: `${Math.min(100, (item.rect.w / CANVAS.width) * 100)}%` }} />
                     </span>
                     <span className="num">
-                      y {Math.round(item.rect.y)} · {Math.round(item.rect.h)}px
+                      y {Math.round(item.rect.y)} · 높이 {Math.round(item.rect.h)}
                     </span>
                   </div>
                 ) : null,
@@ -472,7 +478,7 @@ export function StudioPanel(props: StudioPanelProps) {
               <ul className="small" style={{ margin: '10px 0 0 16px', padding: 0, color: 'var(--bad)' }}>
                 {model.collisions.violations.map((violation, index) => (
                   <li key={`${violation.layer}-${index}`}>
-                    {violation.layer} × {violation.zone} ({violation.overlapPx}px²)
+                    {violation.layer} × {violation.zone} (겹친 넓이 {violation.overlapPx})
                   </li>
                 ))}
               </ul>

@@ -1,8 +1,8 @@
-import { useMemo, useReducer, useState } from 'react';
+import { useEffect, useMemo, useReducer, useState } from 'react';
 import { Button, Card, Kpi, Pill, num, pct } from '../ui';
-import { AbTest, type ArmId, type MetricRow } from '../model/abtest';
-import { estimateHookPatterns } from '../../src/services/hookPatternSim';
-import { ANGLE_BY_ID } from '../../src/services/patternLibrary';
+import { AbTest, DEFAULT_SCENARIO, SCENARIOS, type ArmId, type MetricRow } from '../model/abtest';
+import { METRIC_LABEL, STAT_COLUMN } from '../model/labels';
+import { HookPatternBoard } from './HookPatternBoard';
 
 export interface HookPanelProps {
   topic: string;
@@ -17,77 +17,115 @@ const ANGLE_LABEL: Record<string, string> = {
   contrarian: '역발상형',
 };
 
+/** 수집 주기는 실제 서비스에서 통계 API를 부르는 주기다. 이 화면은 수집 결과만 재현한다. */
+const COLLECT_EVERY = [
+  { id: 'hour', label: '1시간마다' },
+  { id: 'six', label: '6시간마다' },
+  { id: 'day', label: '하루 1번' },
+] as const;
+
 export function HookPanel({ topic, onAdopt }: HookPanelProps) {
-  const test = useMemo(() => new AbTest(topic), [topic]);
-  // 같은 주제로 앵글만 바꿔 쓴 훅 4종. 저장·공유 전환은 상대 비교용 추정치다.
-  const patterns = useMemo(() => estimateHookPatterns({ topic, durationSec: 45 }), [topic]);
-  // `test` is a mutable instance: any state change re-reads its current numbers.
+  const test = useMemo(() => {
+    const instance = new AbTest(topic);
+    instance.loadScenario(DEFAULT_SCENARIO, topic);
+    return instance;
+  }, [topic]);
+  // `test` is a mutable instance: state changes re-read its current numbers.
   const [, bump] = useReducer((value: number) => value + 1, 0);
+  const [scenarioId, setScenarioId] = useState(DEFAULT_SCENARIO);
+  const [collectEvery, setCollectEvery] = useState<string>('six');
   const [adopted, setAdopted] = useState<ArmId | null>(null);
 
-  const result = test.evaluate();
-  const maxSave = Math.max(...patterns.rows.map((row) => row.saveRate), 0.001);
-  const maxShare = Math.max(...patterns.rows.map((row) => row.shareRate), 0.001);
-  const [a, b] = test.arms;
+  // 주제가 바뀌면 새 인스턴스가 선택된 기간의 데이터를 다시 채운다. `test`는 이 화면이
+  // 소유한 가변 객체라 의존성은 그것 하나면 충분하다.
+  useEffect(() => {
+    test.loadScenario(scenarioId, topic);
+    setAdopted(null);
+    bump();
+  }, [test, scenarioId, topic]);
 
-  const collect = (perArm: number): void => {
-    test.collect(perArm);
+  const result = test.evaluate();
+  const [a, b] = test.arms;
+  const scenario = test.scenario ?? SCENARIOS[0]!;
+  const periodLabel = test.window === '7d' ? '7일' : '24시간';
+
+  const switchScenario = (id: string): void => {
+    test.loadScenario(id, topic);
+    setScenarioId(id);
+    setAdopted(null);
     bump();
   };
+
+  const verdict = result.winner
+    ? `${result.winner}안이 낫습니다`
+    : result.ready
+      ? '아직 결론을 못 냅니다'
+      : '표본이 부족합니다';
 
   return (
     <div className="stack">
       <div className="grid kpi">
-        <Kpi label="실험 표본" value={num(test.totalImpressions)} sub={`훅마다 ${num(a.impressions)} 노출`} />
+        <Kpi label="비교 기간" value={periodLabel} sub={scenario.label} />
+        <Kpi label="모은 표본" value={num(test.totalImpressions)} sub={`훅마다 ${num(a.impressions)}명`} />
         <Kpi
           label="판정"
-          value={
-            result.winner ? (
-              <span className={result.winner === 'A' ? '' : 'ok'}>{result.winner}안 우세</span>
-            ) : result.ready ? (
-              '결론 유보'
-            ) : (
-              '표본 부족'
-            )
-          }
-          sub={`신뢰도 ${pct(result.confidence * 100, 1)} · α=0.05`}
+          value={verdict}
+          sub={result.winner ? `믿을 수 있는 정도 ${pct(result.confidence * 100, 0)}` : '표본이 더 필요합니다'}
           tone={result.winner ? 'ok' : undefined}
         />
-        <Kpi label="필요 표본" value={`${num(result.requiredSample)}/안`} sub="완시율 상대 +5% 검출" />
-        <Kpi
-          label="쿠폰 전환 차이"
-          value={`p=${result.coupon.pValue.toFixed(3)}`}
-          sub={result.coupon.pValue < 0.05 ? '유의' : '아직 구분 안 됨'}
-          tone={result.coupon.pValue < 0.05 ? 'ok' : undefined}
-        />
+        <Kpi label="필요한 표본" value={`${num(result.requiredSample)}/안`} sub="끝까지 본 비율 5% 차이를 가릴 때" />
       </div>
 
-      <div className="grid two">
-        <Card
-          title="훅 A/B"
-          hint="같은 영상, 앞 3초만 다릅니다"
-          actions={
-            <>
-              <Button small onClick={() => collect(500)}>
-                +500
+      <Card
+        eyebrow="채널 통계"
+        title="자동 수집과 기간"
+        hint="실제 서비스는 인스타그램·유튜브 통계를 주기적으로 읽어 표본을 채웁니다. 이 화면은 수집이 끝난 상태를 예시로 재현합니다."
+        actions={
+          <div className="row" style={{ gap: 4 }}>
+            <span className="small muted">자동 수집</span>
+            {COLLECT_EVERY.map((option) => (
+              <Button key={option.id} small ghost={collectEvery !== option.id} onClick={() => setCollectEvery(option.id)}>
+                {option.label}
               </Button>
-              <Button small onClick={() => collect(2_000)}>
-                +2,000
-              </Button>
-              <Button
-                small
-                ghost
-                onClick={() => {
-                  test.reset(topic);
-                  setAdopted(null);
-                  bump();
-                }}
+            ))}
+          </div>
+        }
+      >
+        <div className="grid two" style={{ gap: 14 }}>
+          <div>
+            <div className="row" style={{ gap: 6, marginBottom: 8 }}>
+              <Pill tone="ghost">인스타그램 통계 · 미연결</Pill>
+              <Pill tone="ghost">유튜브 통계 · 미연결</Pill>
+            </div>
+            <p className="small muted" style={{ margin: 0 }}>
+              연결하면 위 주기로 조회수·끝까지 본 비율·댓글이 자동으로 쌓입니다. 지금은 아래에서 기간을 골라
+              그 상태의 데이터를 불러옵니다.
+            </p>
+            <p className="note" style={{ marginTop: 10 }}>
+              마지막 수집: <strong>예시 데이터</strong> · {scenario.label} · {scenario.note}
+            </p>
+          </div>
+          <div className="preset-list">
+            {SCENARIOS.map((item) => (
+              <button
+                key={item.id}
+                type="button"
+                className={item.id === scenarioId ? 'preset active' : 'preset'}
+                onClick={() => switchScenario(item.id)}
+                aria-pressed={item.id === scenarioId}
               >
-                초기화
-              </Button>
-            </>
-          }
-        >
+                <span className="preset-label">{item.label}</span>
+                <span className="small muted">
+                  {item.period === '7d' ? '7일' : '24시간'} · 훅마다 {num(item.perArm)}명
+                </span>
+              </button>
+            ))}
+          </div>
+        </div>
+      </Card>
+
+      <div className="grid two">
+        <Card title="A/B 비교" hint={`같은 영상, 앞 3초만 다릅니다 · ${periodLabel} 집계`}>
           <div className="stack" style={{ gap: 10 }}>
             {test.arms.map((arm) => {
               const view = result.rows.find((item) => item.key === 'viewRate3s');
@@ -97,20 +135,18 @@ export function HookPanel({ topic, onAdopt }: HookPanelProps) {
               return (
                 <div
                   key={arm.id}
+                  className="arm-card"
                   style={{
-                    border: '1px solid var(--line)',
                     borderLeft: `3px solid ${arm.id === 'A' ? '#6d7b8c' : '#2f6fa8'}`,
-                    borderRadius: 10,
-                    padding: 12,
                   }}
                 >
                   <div className="row between" style={{ marginBottom: 4 }}>
                     <div className="row" style={{ gap: 7 }}>
                       <strong style={{ fontSize: 13 }}>{arm.id}안</strong>
                       <Pill tone="ghost">{ANGLE_LABEL[arm.angle ?? ''] ?? arm.angle ?? '-'}</Pill>
-                      <span className="small muted">훅 {arm.hookSeconds.toFixed(2)}s</span>
+                      <span className="small muted">훅 {arm.hookSeconds.toFixed(2)}초</span>
                     </div>
-                    <span className="small muted mono">{num(arm.impressions)} 노출</span>
+                    <span className="small muted">{num(arm.impressions)}명에게 노출</span>
                   </div>
                   <p style={{ margin: '0 0 8px', fontSize: 13.5, lineHeight: 1.5 }}>{arm.text}</p>
                   <div className="row" style={{ gap: 14 }}>
@@ -119,31 +155,24 @@ export function HookPanel({ topic, onAdopt }: HookPanelProps) {
                       <strong className="mono">{viewCell && viewCell.trials > 0 ? pct(viewCell.rate * 100, 1) : '—'}</strong>
                     </span>
                     <span className="small muted">
-                      완시{' '}
+                      끝까지 본 비율{' '}
                       <strong className="mono">
                         {retentionCell && retentionCell.trials > 0 ? pct(retentionCell.rate * 100, 1) : '—'}
                       </strong>
-                      {arm.completions > 0 ? ` (${num(arm.completions)}건)` : ''}
                     </span>
                     <span className="small muted">
-                      쿠폰 <strong className="mono">{num(arm.couponClaims)}</strong>건
+                      쿠폰 사용 <strong className="mono">{num(arm.couponClaims)}</strong>건
                     </span>
                   </div>
                 </div>
               );
             })}
           </div>
-
-          <div className="divider" />
-          <p className="note">
-            표본을 모을수록 판정이 안정됩니다. 최소 표본(훅마다 {num(200)} 노출)에 못 미치면 엔진은 승자를 부르지
-            않습니다 — 첫 100회 노출은 훅이 아니라 알고리즘 배분입니다.
-          </p>
         </Card>
 
         <Card
-          title="승자 훅"
-          hint="주 지표(완시율)에서 유의하고, 상승폭이 5%(상대) 이상일 때만 채택합니다"
+          title="이번 판정"
+          hint="끝까지 본 비율이 통계적으로 유의하고, 차이가 5% 이상일 때만 승자를 부릅니다."
           actions={
             result.winner ? (
               <Button
@@ -154,7 +183,7 @@ export function HookPanel({ topic, onAdopt }: HookPanelProps) {
                   setAdopted(result.winner);
                 }}
               >
-                {result.winner}안 대본에 적용
+                {result.winner}안을 대본에 넣기
               </Button>
             ) : null
           }
@@ -162,36 +191,33 @@ export function HookPanel({ topic, onAdopt }: HookPanelProps) {
           {result.winner ? (
             <div>
               <div className="row" style={{ gap: 8, marginBottom: 8 }}>
-                <Pill tone="ok">{result.winner}안 승자</Pill>
-                <span className="small muted">
-                  신뢰도 {pct(result.confidence * 100, 1)} · 완시율 상승 {pct((result.rows[1]?.lift ?? 0) * 100, 1)}
-                </span>
+                <Pill tone="ok">{result.winner}안 우세</Pill>
+                <span className="small muted">믿을 수 있는 정도 {pct(result.confidence * 100, 0)}</span>
               </div>
               <p style={{ margin: 0, fontSize: 15, fontWeight: 600, lineHeight: 1.5 }}>{test.textOf(result.winner as ArmId)}</p>
               {adopted ? (
                 <p className="note" style={{ marginTop: 10 }}>
-                  {adopted}안을 9:16 스튜디오의 훅 문장으로 넣었습니다. 탭을 옮기면 타임라인이 다시 계산되어 있습니다.
+                  {adopted}안을 9:16 스튜디오의 첫 문장으로 넣었습니다. 타임라인과 자막이 다시 계산됩니다.
                 </p>
               ) : (
                 <p className="note" style={{ marginTop: 10 }}>
-                  채택하면 스튜디오 대본의 훅이 이 문장으로 바뀌고, 훅 길이·자막·타임라인이 자동으로 다시 계산됩니다.
+                  넣으면 스튜디오 대본의 첫 문장이 이 문장으로 바뀌고, 길이에 맞춰 자막과 장면 시간이 다시 잡힙니다.
                 </p>
               )}
             </div>
           ) : (
             <div>
               <p style={{ margin: 0, fontSize: 13.5 }}>
-                {result.ready
-                  ? '아직 승자를 부를 수 없습니다.'
-                  : `훅마다 최소 200 노출이 필요합니다 (현재 A ${num(a.impressions)} · B ${num(b.impressions)}).`}
+                {result.ready ? '아직 승자를 부를 수 없습니다.' : '표본이 부족해 승자를 부르지 않습니다.'}
               </p>
               <p className="note" style={{ marginTop: 8 }}>
-                표본이 부족하거나, 차이가 유의하지 않거나, 상승폭이 5%(상대)에 못 미치면 “결론 유보”가 정답입니다. 대시보드가
-                매번 승자를 만들면 그건 통계가 아닙니다.
+                {result.ready
+                  ? '차이가 우연일 수 있거나 차이 자체가 작습니다. 이럴 때 “결론 없음”이 정답입니다. 대시보드가 매번 승자를 만들면 그건 통계가 아닙니다.'
+                  : `훅마다 최소 200명의 노출이 필요합니다 (지금 A ${num(a.impressions)} · B ${num(b.impressions)}).`}
               </p>
             </div>
           )}
-          {result.notes.length > 0 ? (
+          {result.ready && result.notes.length > 0 ? (
             <ul className="small muted" style={{ margin: '12px 0 0 16px', padding: 0 }}>
               {result.notes.map((note, index) => (
                 <li key={index}>{note}</li>
@@ -201,104 +227,7 @@ export function HookPanel({ topic, onAdopt }: HookPanelProps) {
         </Card>
       </div>
 
-
-      <Card
-        title="훅 유형별 예상 저장·공유 전환"
-        hint="같은 주제로 앵글만 바꿔 엔진이 쓴 훅 4종 · 휴리스틱 추정(실측 아님)"
-        actions={<Pill tone="ghost">A/B로 실측 확인</Pill>}
-      >
-        <div className="scroll" style={{ maxHeight: 'none' }}>
-          <table className="data">
-            <thead>
-              <tr>
-                <th>유형</th>
-                <th>훅 문장</th>
-                <th className="num">길이</th>
-                <th className="num">3초 유지</th>
-                <th>저장 전환</th>
-                <th>공유 전환</th>
-                <th>판단</th>
-              </tr>
-            </thead>
-            <tbody>
-              {patterns.rows.map((row) => (
-                <tr key={row.id}>
-                  <td>
-                    <strong style={{ fontSize: 12.5 }}>{row.label}</strong>
-                    <div className="small muted">{ANGLE_BY_ID[row.angle].label}</div>
-                  </td>
-                  <td style={{ maxWidth: 280 }}>{row.example}</td>
-                  <td className="num mono">{row.hookSeconds.toFixed(1)}s</td>
-                  <td className="num mono">{pct(row.holdRate3s * 100, 1)}</td>
-                  <td>
-                    <div className="row" style={{ gap: 8, flexWrap: 'nowrap' }}>
-                      <span className="meter" style={{ width: 72 }}>
-                        <span
-                          style={{
-                            width: `${Math.min(100, (row.saveRate / maxSave) * 100).toFixed(0)}%`,
-                            background: row.id === patterns.bestSave ? 'var(--ok)' : '#6d7b8c',
-                          }}
-                        />
-                      </span>
-                      <span className="num mono" style={{ fontSize: 12 }}>
-                        {pct(row.saveRate * 100, 2)}
-                      </span>
-                    </div>
-                  </td>
-                  <td>
-                    <div className="row" style={{ gap: 8, flexWrap: 'nowrap' }}>
-                      <span className="meter" style={{ width: 72 }}>
-                        <span
-                          style={{
-                            width: `${Math.min(100, (row.shareRate / maxShare) * 100).toFixed(0)}%`,
-                            background: row.id === patterns.bestShare ? 'var(--ok)' : '#6d7b8c',
-                          }}
-                        />
-                      </span>
-                      <span className="num mono" style={{ fontSize: 12 }}>
-                        {pct(row.shareRate * 100, 2)}
-                      </span>
-                    </div>
-                  </td>
-                  <td>
-                    {row.verdict.includes('우세') ? (
-                      <Pill tone="ok">{row.verdict}</Pill>
-                    ) : (
-                      <Pill tone="ghost">{row.verdict}</Pill>
-                    )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-        <div className="divider" />
-        <div className="grid two" style={{ gap: 12 }}>
-          <div>
-            <h3>적용된 배수 (추정 근거)</h3>
-            <ul className="small muted" style={{ margin: '0 0 0 16px', padding: 0, lineHeight: 1.7 }}>
-              {patterns.rows.map((row) => (
-                <li key={row.id}>
-                  <strong>{row.label}</strong> — {row.factors.length > 0 ? row.factors.join(' · ') : '주제 보정 없음 (기준선)'}
-                </li>
-              ))}
-            </ul>
-          </div>
-          <div>
-            <h3>읽는 법</h3>
-            <ul className="small muted" style={{ margin: '0 0 0 16px', padding: 0, lineHeight: 1.7 }}>
-              {patterns.notes.map((note, index) => (
-                <li key={index}>{note}</li>
-              ))}
-            </ul>
-            <p className="note" style={{ marginTop: 8 }}>
-              {patterns.method} · 카테고리 «{patterns.profile.categoryLabel}» 기준
-            </p>
-          </div>
-        </div>
-      </Card>
-
-      <Card title="지표별 비교" hint="비율 지표는 양측 z-검정 + Wilson 95% 구간">
+      <Card title="지표별 비교" hint={`${periodLabel} 집계 · 비율은 양쪽을 함께 비교해 우연일 확률을 계산합니다`}>
         <div className="scroll" style={{ maxHeight: 'none' }}>
           <table className="data">
             <thead>
@@ -306,17 +235,17 @@ export function HookPanel({ topic, onAdopt }: HookPanelProps) {
                 <th>지표</th>
                 <th className="num">A안</th>
                 <th className="num">B안</th>
-                <th className="num">차이</th>
-                <th className="num">p-value</th>
-                <th>95% 구간 (A / B)</th>
-                <th>판정</th>
+                <th className="num">{STAT_COLUMN.lift}</th>
+                <th className="num">{STAT_COLUMN.pValue}</th>
+                <th>{STAT_COLUMN.interval}</th>
+                <th>{STAT_COLUMN.verdict}</th>
               </tr>
             </thead>
             <tbody>
               {result.rows.map((row) => (
                 <tr key={row.key}>
                   <td>
-                    <strong style={{ fontSize: 12.5 }}>{row.label}</strong>
+                    <strong style={{ fontSize: 12.5 }}>{METRIC_LABEL[row.key]}</strong>
                     <div className="small muted">{row.hint}</div>
                   </td>
                   <td className="num">{row.a.trials === 0 ? '—' : pct(row.a.rate * 100, 1)}</td>
@@ -324,19 +253,19 @@ export function HookPanel({ topic, onAdopt }: HookPanelProps) {
                   <td className="num" style={{ color: row.lift >= 0 ? 'var(--ok)' : 'var(--bad)' }}>
                     {row.a.trials === 0 || row.b.trials === 0 ? '—' : `${row.lift >= 0 ? '+' : ''}${pct(row.lift * 100, 1)}`}
                   </td>
-                  <td className="num mono">{row.pValue < 0.001 ? '<0.001' : row.pValue.toFixed(3)}</td>
+                  <td className="num mono">{row.pValue < 0.001 ? '0.1% 미만' : pct(row.pValue * 100, 1)}</td>
                   <td>
                     <ConfidenceBar row={row} />
                   </td>
                   <td>
                     {row.a.trials === 0 || row.b.trials === 0 ? (
-                      <Pill tone="ghost">데이터 없음</Pill>
+                      <Pill tone="ghost">자료 없음</Pill>
                     ) : row.leader === null ? (
-                      <Pill tone="ghost">동일</Pill>
+                      <Pill tone="ghost">차이 없음</Pill>
                     ) : row.significant ? (
                       <Pill tone="ok">{row.leader}안 우세</Pill>
                     ) : (
-                      <Pill tone="ghost">차이 미확인</Pill>
+                      <Pill tone="ghost">차이 확인 안 됨</Pill>
                     )}
                   </td>
                 </tr>
@@ -345,10 +274,12 @@ export function HookPanel({ topic, onAdopt }: HookPanelProps) {
           </table>
         </div>
         <p className="note" style={{ marginTop: 10 }}>
-          쿠폰 전환율은 <strong>3초 시청 대비 댓글 쿠폰 수령</strong>입니다. 완시율이 좋아도 전환이 따라오지 않으면
-          수익은 늘지 않으므로 두 지표를 따로 봅니다.
+          ‘우연일 확률’이 5%보다 작아야 차이라고 부릅니다. 쿠폰 전환율은 3초 본 사람 중 쿠폰을 사용한 비율이라
+          끝까지 본 비율과 따로 봅니다.
         </p>
       </Card>
+
+      <HookPatternBoard topic={topic} />
     </div>
   );
 }

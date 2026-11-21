@@ -19,26 +19,97 @@ import {
  * a DM sender to call and a log a human can read.
  */
 
-export const CONTENT_REF = 'reel_kitchen_1114';
+export const CONTENT_REF = 'reel_kitchen_1120';
 const APP_SECRET = 'demo-app-secret';
 const SIGNING_KEY = 'demo-signing-key';
 
-export const CAMPAIGN: InteractiveCampaign = {
-  id: 1,
-  tenantId: 1,
-  code: 'BUSAN-BOM-1114',
-  platform: 'instagram',
-  contentRef: CONTENT_REF,
-  triggerKeywords: ['쿠폰', '할인', '링크'],
-  rewardLabel: '5,000원 쿠폰',
+/**
+ * 게시물 단위 규칙.
+ *
+ * 실제 인스타 댓글 캠페인은 "계정"이 아니라 **게시물 하나**에 걸린다. 같은 계정의 다른
+ * 릴스에 단 댓글이 쿠폰을 받으면 안 되기 때문에, 웹훅의 `media.id`가 campaign.contentRef와
+ * 일치할 때만 발송한다. 이 화면의 게시물 목록은 그 단위를 눈에 보이게 만든 것이다.
+ */
+export interface PostItem {
+  id: string;
+  kind: 'reel' | 'feed';
+  productType: 'REELS' | 'FEED';
+  title: string;
+  postedLabel: string;
+  views: number;
+  comments: number;
+}
+
+export const POSTS: PostItem[] = [
+  {
+    id: CONTENT_REF,
+    kind: 'reel',
+    productType: 'REELS',
+    title: '3평 주방 수납, 사기 전에 버리는 순서',
+    postedLabel: '11월 20일',
+    views: 12_800,
+    comments: 96,
+  },
+  {
+    id: 'reel_commute_1118',
+    kind: 'reel',
+    productType: 'REELS',
+    title: '퇴사 후 첫 달, 돈 새는 곳 3군데',
+    postedLabel: '11월 18일',
+    views: 8_400,
+    comments: 61,
+  },
+  {
+    id: 'feed_cafe_1115',
+    kind: 'feed',
+    productType: 'FEED',
+    title: '부산 전포 카페 6곳 저장용',
+    postedLabel: '11월 15일',
+    views: 5_300,
+    comments: 28,
+  },
+];
+
+export interface CouponRule {
+  keywords: string[];
+  rewardAmount: number;
+  claimLimit: number;
+  tokenTtlMinutes: number;
+}
+
+export const DEFAULT_RULE: CouponRule = {
+  keywords: ['쿠폰', '할인', '링크'],
   rewardAmount: 5_000,
   claimLimit: 100,
-  totalRewardBudget: 500_000,
   tokenTtlMinutes: 15,
-  startsAt: 0,
-  endsAt: Number.MAX_SAFE_INTEGER,
-  status: 'live',
 };
+
+export const REWARD_PRESETS = [3_000, 5_000, 10_000] as const;
+
+export function rewardLabelOf(amount: number): string {
+  return `${amount.toLocaleString('ko-KR')}원 쿠폰`;
+}
+
+export function campaignFrom(post: PostItem, rule: CouponRule, nowMs: number): InteractiveCampaign {
+  return {
+    id: 1,
+    tenantId: 1,
+    code: `DROP-${post.id.slice(-4).toUpperCase()}`,
+    platform: 'instagram',
+    contentRef: post.id,
+    triggerKeywords: [...rule.keywords],
+    rewardLabel: rewardLabelOf(rule.rewardAmount),
+    rewardAmount: rule.rewardAmount,
+    claimLimit: rule.claimLimit,
+    totalRewardBudget: rule.rewardAmount * rule.claimLimit,
+    tokenTtlMinutes: rule.tokenTtlMinutes,
+    startsAt: nowMs - 3_600_000,
+    endsAt: nowMs + 6 * 3_600_000,
+    status: 'live',
+  };
+}
+
+export const CAMPAIGN: InteractiveCampaign = campaignFrom(POSTS[0]!, DEFAULT_RULE, Date.now());
 
 export interface DmRecord {
   at: number;
@@ -81,6 +152,12 @@ const MAX_FEED = 60;
 export class CouponDesk {
   dispatcher: InteractiveCouponDispatcher;
 
+  campaign: InteractiveCampaign;
+
+  rule: CouponRule;
+
+  post: PostItem;
+
   feed: FeedItem[] = [];
 
   dms: DmRecord[] = [];
@@ -116,13 +193,16 @@ export class CouponDesk {
 
   constructor(now: () => number = Date.now) {
     this.now = now;
+    this.rule = { ...DEFAULT_RULE };
+    this.post = POSTS[0]!;
+    this.campaign = campaignFrom(this.post, this.rule, this.now());
     this.dispatcher = this.createDispatcher();
   }
 
   private createDispatcher(): InteractiveCouponDispatcher {
     const now = this.now;
     return new InteractiveCouponDispatcher({
-      campaigns: [{ ...CAMPAIGN, startsAt: now() - 3_600_000, endsAt: now() + 6 * 3_600_000 }],
+      campaigns: [this.campaign],
       signingKey: SIGNING_KEY,
       now,
       slaSeconds: 5,
@@ -140,6 +220,24 @@ export class CouponDesk {
         return { ok: true };
       },
     });
+  }
+
+  /**
+   * 게시물 또는 규칙을 바꿔 새 드롭을 시작한다.
+   * 규칙이 바뀌면 예산·장수·보상이 달라지므로 이전 시험 기록을 새 규칙에 섞지 않는다.
+   */
+  applyRule(post: PostItem, rule: CouponRule): void {
+    this.post = post;
+    this.rule = { ...rule, keywords: [...rule.keywords] };
+    this.campaign = campaignFrom(post, this.rule, this.now());
+    this.feed = [];
+    this.dms = [];
+    this.deadLetters = [];
+    this.pendingTokens.clear();
+    this.ingest = { received: 0, accepted: 0, enqueued: 0, ignored: 0, duplicates: 0, abuseBlocked: 0, noSignature: 0 };
+    this.dispatch = { claimed: 0, dispatched: 0, retried: 0, deadLettered: 0, late: 0, slaCompliance: 1, worstLatencyMs: 0 };
+    this.storm = null;
+    this.dispatcher = this.createDispatcher();
   }
 
   reset(): void {
@@ -188,7 +286,8 @@ export class CouponDesk {
                 id: `cmt_${this.now()}_${this.seq + 1}`,
                 text,
                 from: { id: authorRef, username: handle },
-                media: { id: CONTENT_REF, media_product_type: 'REELS' },
+                // The media id is what binds a comment to one post's rule.
+                media: { id: this.post.id, media_product_type: this.post.productType },
               },
             },
           ],
@@ -238,20 +337,20 @@ export class CouponDesk {
         kind: 'blocked',
         handle,
         text: input.text,
-        detail: '어뷰징 점수 50점 이상 — 발급하지 않고 예산을 쓰지 않음',
+        detail: '같은 계정이 짧은 시간에 반복해 도배로 판단했습니다. 발급하지 않고 예산도 쓰지 않았습니다.',
       });
     } else if (report.duplicates > 0) {
-      this.push({ at, kind: 'duplicate', handle, text: input.text, detail: '같은 댓글 ID 재전송 — 멱등키로 무시' });
+      this.push({ at, kind: 'duplicate', handle, text: input.text, detail: '같은 댓글이 다시 들어와 한 번만 처리했습니다.' });
     } else if (report.ignored > 0) {
       this.push({
         at,
         kind: 'ignored',
         handle,
         text: input.text,
-        detail: '트리거 키워드(쿠폰·할인·링크) 불일치',
+        detail: '자동응답 키워드가 없어 지나갔습니다.',
       });
     } else {
-      this.push({ at, kind: 'comment', handle, text: input.text, detail: `HMAC 서명 검증 통과 · 큐 적재` });
+      this.push({ at, kind: 'comment', handle, text: input.text, detail: '서명 확인을 통과해 발송 대기열에 넣었습니다.' });
     }
   }
 
@@ -284,7 +383,7 @@ export class CouponDesk {
           kind: 'late',
           handle: this.handles.get(job.recipientRef) ?? job.recipientRef,
           text: '',
-          detail: `5초 데드라인 초과(${job.lastError}) — 늦은 쿠폰은 보내지 않고 DLQ로`,
+          detail: '5초 안에 보내지 못해 취소했습니다. 늦은 쿠폰은 보내지 않습니다.',
         });
       }
       if (job.status === 'DISPATCHED' && job.tokenUuid) {
@@ -298,7 +397,7 @@ export class CouponDesk {
           deepLink: `https://coupon.shye.kr/c/${pending.plain}`,
           plainToken: pending.plain,
           tokenUuid: job.tokenUuid,
-          expiresAt: pending.at + CAMPAIGN.tokenTtlMinutes * 60_000,
+          expiresAt: pending.at + this.campaign.tokenTtlMinutes * 60_000,
           latencyMs: this.dispatch.worstLatencyMs,
           claimed: false,
           claimStatus: null,
@@ -310,7 +409,7 @@ export class CouponDesk {
           kind: 'dm',
           handle: pending.handle,
           text: '',
-          detail: `1회용 링크 발급 · 유효 15분 · 잔여 ${this.poolRemaining}장`,
+          detail: `1회용 링크를 보냈습니다. ${this.campaign.tokenTtlMinutes}분 안에 한 번만 사용할 수 있고, 남은 쿠폰은 ${this.poolRemaining}장입니다.`,
           deepLink: dm.deepLink,
           dmId: dm.jobId,
         });
@@ -324,7 +423,7 @@ export class CouponDesk {
     if (!dm) {
       return { status: 'NOT_FOUND', rewardAmount: 0, attempts: 0, reason: '발급 기록이 없습니다.' };
     }
-    this.dispatcher.recordClick(CAMPAIGN.id, dm.tokenUuid);
+    this.dispatcher.recordClick(this.campaign.id, dm.tokenUuid);
     const outcome = await this.dispatcher.claim(dm.plainToken);
     this.dms = this.dms.map((item) =>
       item.jobId === jobId ? { ...item, claimed: outcome.status === 'GRANTED' || item.claimed, claimStatus: outcome.status } : item,
@@ -335,20 +434,20 @@ export class CouponDesk {
   recordPurchase(jobId: number, orderAmount: number): void {
     const dm = this.dms.find((item) => item.jobId === jobId);
     if (!dm || !dm.claimed) return;
-    this.dispatcher.recordPurchase(CAMPAIGN.id, dm.tokenUuid, `order_${jobId}`, orderAmount);
+    this.dispatcher.recordPurchase(this.campaign.id, dm.tokenUuid, `order_${jobId}`, orderAmount);
     this.dms = this.dms.map((item) => (item.jobId === jobId ? { ...item, purchased: true } : item));
   }
 
   funnel(): FunnelReport {
-    return this.dispatcher.funnel(CAMPAIGN.id);
+    return this.dispatcher.funnel(this.campaign.id);
   }
 
   get poolRemaining(): number {
-    return this.dispatcher.pool(CAMPAIGN.id)?.remaining ?? 0;
+    return this.dispatcher.pool(this.campaign.id)?.remaining ?? 0;
   }
 
   get poolGranted(): number {
-    return this.dispatcher.pool(CAMPAIGN.id)?.granted ?? 0;
+    return this.dispatcher.pool(this.campaign.id)?.granted ?? 0;
   }
 
   jobs(): DispatchJob[] {

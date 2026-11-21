@@ -248,7 +248,7 @@ export const BEAT_LABEL: Record<Beat, string> = {
   hook: '훅',
   problem: '문제',
   solution: '해결',
-  cta: 'CTA',
+  cta: '마지막 유도',
 };
 
 export const BEAT_HINT: Record<Beat, string> = {

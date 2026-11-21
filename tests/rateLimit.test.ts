@@ -108,9 +108,10 @@ describe('daily quota', () => {
     expect(quota.tryConsume(10)).toBe(true);
   });
 
-  it('reports the reset countdown', () => {
+  it('reports the reset countdown from the oldest charge (rolling window)', () => {
     const time = clock();
     const quota = new DailyQuota({ limitUnits: 5, windowMs: 60_000, now: time.now });
+    expect(quota.tryConsume(1)).toBe(true);
     time.advance(15_000);
     expect(quota.resetInMs).toBe(45_000);
   });
@@ -119,6 +120,44 @@ describe('daily quota', () => {
     expect(() => new DailyQuota({ limitUnits: 0 })).toThrow(/positive/);
     const quota = new DailyQuota({ limitUnits: 5 });
     expect(() => quota.tryConsume(-1)).toThrow(/>= 0/);
+  });
+
+  it('frees budget exactly 24 hours after each charge (Meta rolling window)', () => {
+    const time = clock();
+    const quota = new DailyQuota({ limitUnits: 3, now: time.now });
+    expect(quota.tryConsume(1)).toBe(true);
+    time.advance(6 * 60 * 60 * 1_000);
+    expect(quota.tryConsume(1)).toBe(true);
+    expect(quota.tryConsume(1)).toBe(true);
+    expect(quota.tryConsume(1)).toBe(false);
+    // First charge expires 24h after it was made, the other two stay spent.
+    time.advance(18 * 60 * 60 * 1_000);
+    expect(quota.remaining).toBe(1);
+    time.advance(6 * 60 * 60 * 1_000);
+    expect(quota.remaining).toBe(3);
+  });
+
+  it('resets a calendar-day quota at the time zone midnight (YouTube, Pacific)', () => {
+    // 2026-11-20 15:00 UTC = 07:00 PST. The next Pacific midnight is 08:00 UTC on 11-21.
+    let now = Date.parse('2026-11-20T15:00:00.000Z');
+    const quota = new DailyQuota({
+      limitUnits: 10_000,
+      reset: 'calendar-day',
+      timeZone: 'America/Los_Angeles',
+      now: () => now,
+    });
+    expect(quota.tryConsume(1_600)).toBe(true);
+    expect(quota.remaining).toBe(8_400);
+    expect(quota.resetInMs).toBe(17 * 60 * 60 * 1_000);
+
+    // 2026-11-21 07:59 UTC is still the same Pacific day (23:59 PST).
+    now = Date.parse('2026-11-21T07:59:00.000Z');
+    expect(quota.remaining).toBe(8_400);
+    expect(quota.resetInMs).toBe(60_000);
+
+    // One minute later the Pacific day has rolled over.
+    now = Date.parse('2026-11-21T08:00:00.000Z');
+    expect(quota.remaining).toBe(10_000);
   });
 });
 

@@ -18,6 +18,10 @@ export interface ProviderProfile {
   dailyUnits: number;
   /** Cost of one publish in those units. */
   unitCost: number;
+  /** 일일 한도가 풀리는 방식. */
+  quotaReset: 'rolling' | 'calendar-day';
+  /** calendar-day일 때의 기준 시간대. */
+  quotaTimeZone?: string;
 }
 
 /**
@@ -35,6 +39,8 @@ export const PROVIDER_PROFILES: Record<ProviderId, ProviderProfile> = {
     requestRefillPerSec: 0.2,
     dailyUnits: 25,
     unitCost: 1,
+    // Meta의 콘텐츠 발행 한도는 "지난 24시간" 이동 창이다.
+    quotaReset: 'rolling',
   },
   youtube: {
     label: 'YouTube Data API v3',
@@ -42,6 +48,9 @@ export const PROVIDER_PROFILES: Record<ProviderId, ProviderProfile> = {
     requestRefillPerSec: 0.1,
     dailyUnits: 10_000,
     unitCost: 1_600,
+    // YouTube 할당량은 태평양 자정에 캘린더 데이 단위로 초기화된다.
+    quotaReset: 'calendar-day',
+    quotaTimeZone: 'America/Los_Angeles',
   },
 };
 
@@ -170,6 +179,8 @@ export class TenantRegistry {
       });
       quotas[provider] = new DailyQuota({
         limitUnits: override?.dailyUnits ?? profile.dailyUnits,
+        reset: profile.quotaReset,
+        timeZone: profile.quotaTimeZone,
         now: this.now,
       });
     }

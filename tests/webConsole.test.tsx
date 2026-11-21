@@ -78,7 +78,7 @@ describe('web console', () => {
     expect(text()).toContain('오디오 더킹');
     expect(text()).toContain('안전영역 검증');
     // The phone shows a beat marker and the BGM gain the envelope produces.
-    expect(text()).toMatch(/BGM \d+%/);
+    expect(text()).toMatch(/배경음악 \d+%/);
     expect(container.querySelector('.phone')).not.toBeNull();
     expect(container.querySelector('svg.envelope')).not.toBeNull();
     // Safe-area guides are drawn from the platform's reserved rectangles.
@@ -124,33 +124,46 @@ describe('web console', () => {
 
   it('runs one comment → DM → claim cycle from the coupon panel', async () => {
     await click('댓글 → DM 쿠폰');
-    expect(text()).toContain('BUSAN-BOM-1114');
+    expect(text()).toContain('DROP-1120');
 
     // The composer already holds '쿠폰 주세요!'; submit it as the webhook body.
-    await click('댓글 등록');
+    await click('댓글 넣기');
     await settle(600);
 
-    expect(text()).toContain('coupon.shye.kr/c/');
+    expect(text()).toContain('1회용 링크를 보냈습니다');
 
-    await click('링크 열기');
+    await click('받은 사람처럼 링크 열기');
     await settle(50);
-    expect(text()).toContain('GRANTED');
-    expect(text()).toContain('수령');
+    expect(text()).toContain('쿠폰 사용');
+  });
+
+  it('binds the rule to the selected post and only answers that post', async () => {
+    await click('댓글 → DM 쿠폰');
+    expect(text()).toContain('어느 게시물에 걸까요');
+
+    // Pick the second post and apply the rule; the campaign code follows the post.
+    await click('퇴사 후 첫 달');
+    await click('이 게시물에 규칙 적용');
+    expect(text()).toContain('DROP-1118');
+
+    await click('댓글 넣기');
+    await settle(600);
+    expect(text()).toContain('받은 사람처럼 링크 열기');
   });
 
   it('shows the quota gauges and stops the queue when a platform limit is reached', async () => {
     await click('발행 캘린더 · 쿼터');
-    expect(text()).toContain('Meta Graph');
-    expect(text()).toContain('YouTube');
-    expect(text()).toContain('일일 쿼터');
+    expect(text()).toContain('인스타그램');
+    expect(text()).toContain('유튜브');
+    expect(text()).toContain('플랫폼별 한도');
 
     for (let index = 0; index < 12; index += 1) {
-      await click('다음 슬롯 발행');
+      await click('다음 예약 발행');
     }
     await settle(30);
 
-    expect(text()).toMatch(/한도 소진|버킷 소진|중단/);
-    expect(text()).toContain('DLQ');
+    expect(text()).toMatch(/멈춤|한도로 멈춤/);
+    expect(text()).toContain('확인이 필요한 작업');
   });
 
   it('converts the studio script into three publishing formats on the OSMU tab', async () => {
@@ -173,24 +186,27 @@ describe('web console', () => {
 
   it('compares the four hook patterns before spending impressions', async () => {
     await click('훅 A/B');
-    expect(text()).toContain('훅 유형별 예상 저장·공유 전환');
+    expect(text()).toContain('훅 유형별 예상 저장·공유');
     expect(text()).toContain('질문형');
     expect(text()).toContain('숫자형');
     expect(text()).toContain('반전형');
     expect(text()).toContain('체크리스트형');
-    expect(text()).toContain('실측 아님');
+    expect(text()).toContain('실측이 아닙니다');
   });
 
-  it('collects A/B samples and keeps the decision honest', async () => {
+  it('switches the collection period instead of asking a human to add samples', async () => {
     await click('훅 A/B');
-    expect(text()).toContain('훅 A/B');
-    expect(text()).toContain('3초 유지율');
-    expect(text()).toContain('완시율');
-    expect(text()).toContain('쿠폰 전환율');
+    expect(text()).toContain('A/B 비교');
+    expect(text()).toContain('3초 유지');
+    expect(text()).toContain('끝까지 본 비율');
+    expect(text()).toContain('쿠폰 사용');
+    // 표본을 손으로 올리는 버튼은 없다.
+    expect(text()).not.toContain('+2,000');
+    expect(text()).not.toContain('+500');
+    expect(text()).toContain('올린 지 3시간');
 
-    await click('+2,000');
-    await click('+2,000');
-    expect(text()).toContain('실험 표본');
-    expect(text()).toMatch(/A안|B안|결론 유보/);
+    await click('7일 누적');
+    expect(text()).toMatch(/A안 우세|B안 우세/);
+    expect(text()).toContain('믿을 수 있는 정도');
   });
 });

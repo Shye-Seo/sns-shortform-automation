@@ -104,8 +104,67 @@ const TRUTH: Record<ArmId, Truth> = {
   B: { viewRate3s: 0.664, retention: 0.401, commentRate: 0.023, couponRate: 0.214 },
 };
 
+/**
+ * 시나리오 프리셋.
+ *
+ * 실제 서비스라면 채널 통계 API에서 24시간·7일 지표가 자동으로 들어온다. 이 저장소에는
+ * 그 자격 증명이 없으므로, "수집이 끝난 상태"를 프리셋으로 재현한다. 프리셋은 표본
+ * 크기와 진실값만 정하고, 판정은 항상 실제 통계 모듈이 한다 — 프리셋이 승자를 정하지
+ * 않는다는 점이 이 화면의 요점이다.
+ */
+export interface AbScenario {
+  id: string;
+  label: string;
+  /** 채널 통계에서 읽어 오는 비교 기간 */
+  period: '24h' | '7d';
+  perArm: number;
+  /** 두 훅이 사실상 같은 성과인 날 — 표본이 커도 승자를 부르면 안 된다 */
+  equal?: boolean;
+  note: string;
+}
+
+export const SCENARIOS: AbScenario[] = [
+  {
+    id: 'first-3h',
+    label: '올린 지 3시간',
+    period: '24h',
+    perArm: 150,
+    note: '첫 100회 노출은 훅이 아니라 알고리즘 배분이라 판정하지 않습니다.',
+  },
+  {
+    id: 'day-1',
+    label: '첫 24시간',
+    period: '24h',
+    perArm: 1_200,
+    note: '하루가 지나면 A·B 차이가 보이기 시작합니다.',
+  },
+  {
+    id: 'week-1',
+    label: '7일 누적',
+    period: '7d',
+    perArm: 18_900,
+    note: '일주일이면 같은 차이라도 판정이 흔들리지 않습니다.',
+  },
+  {
+    id: 'flat-week',
+    label: '차이가 없던 주',
+    period: '7d',
+    perArm: 9_000,
+    equal: true,
+    note: '두 훅이 사실상 같았던 주입니다. 표본이 충분해도 승자를 부르지 않는 예입니다.',
+  },
+];
+
+export const DEFAULT_SCENARIO = 'first-3h';
+
 export class AbTest {
   arms: Arm[];
+
+  /** 채널 통계에서 읽어 온 비교 기간. 판정의 window와 표에 같이 적힌다. */
+  window: '24h' | '7d' = '24h';
+
+  /** 마지막으로 수집된 시나리오. 화면의 '지금 데이터' 표기에 쓴다. */
+  scenario: AbScenario | null = null;
 
   private seed: number;
 
@@ -144,13 +203,17 @@ export class AbTest {
   reset(topic: string, seed?: number): void {
     this.seed = seed ?? this.seed;
     this.arms = this.makeArms(topic);
+    this.scenario = null;
+    this.window = '24h';
   }
 
   /** Collect `perArm` more impressions for each arm. */
-  collect(perArm: number): void {
+  collect(perArm: number, equal = false): void {
     const random = mulberry32(this.seed + perArm * 31 + (this.totalImpressions >> 3));
     this.arms = this.arms.map((arm) => {
-      const truth = TRUTH[arm.id];
+      const base = TRUTH[arm.id];
+      // '차이 없음' 시나리오는 B의 진실값을 A와 같게 둔다.
+      const truth = equal ? TRUTH.A : base;
       const impressions = perArm;
       const views3s = binomial(impressions, truth.viewRate3s, random);
       const completions = binomial(views3s, truth.retention, random);
@@ -165,6 +228,19 @@ export class AbTest {
         couponClaims: arm.couponClaims + couponClaims,
       };
     });
+  }
+
+  /**
+   * 자동 수집이 끝난 상태로 전환한다. 쌓인 표본을 버리고 선택한 기간의 데이터로 바꾼다 —
+   * 기간을 바꿨는데 이전 표본이 남아 있으면 "7일"이라고 적힌 표가 실제로는 3시간 표본이 된다.
+   */
+  loadScenario(id: string, topic: string): AbScenario {
+    const scenario = SCENARIOS.find((item) => item.id === id) ?? SCENARIOS[0]!;
+    this.arms = this.makeArms(topic);
+    this.window = scenario.period;
+    this.collect(scenario.perArm, scenario.equal === true);
+    this.scenario = scenario;
+    return scenario;
   }
 
   private aggregates(window: '24h' | '7d' = '24h'): VariantAggregate[] {
@@ -220,10 +296,10 @@ export class AbTest {
 
   evaluate(): AbResult {
     const [a, b] = this.arms;
-    const aggregates = this.aggregates('24h');
+    const aggregates = this.aggregates(this.window);
     const primary = evaluateExperiment('exp-kitchen-hook', aggregates, {
       metric: PRIMARY_METRIC,
-      window: '24h',
+      window: this.window,
       minSample: MIN_SAMPLE,
       minLift: MIN_LIFT,
       alpha: ALPHA,
@@ -267,14 +343,16 @@ export class AbTest {
         ? (primary.winner as ArmId)
         : null;
 
-    const notes = [...primary.notes];
+    const notes: string[] = [];
+    if (!ready) {
+      notes.push(`표본이 부족해 판정하지 않았습니다 (훅마다 노출 ${a.impressions.toLocaleString('ko-KR')}명).`);
+    } else if (primary.status === 'inconclusive') {
+      notes.push('차이가 우연일 수 있거나 폭이 작아 승자를 부르지 않았습니다.');
+    }
     if (ready && primary.status === 'winner' && coupon.pValue >= ALPHA) {
       notes.push(
-        `완시율은 유의하지만 쿠폰 전환율은 p=${coupon.pValue.toFixed(3)}로 아직 구분되지 않습니다. 전환까지 확인하려면 표본을 더 모읍니다.`,
+        `끝까지 본 비율은 차이가 있지만 쿠폰 사용은 아직 구분되지 않습니다(우연일 확률 ${(coupon.pValue * 100).toFixed(1)}%). 전환까지 확인하려면 표본을 더 모읍니다.`,
       );
-    }
-    if (!ready) {
-      notes.push(`판정 최소 표본은 훅마다 노출 ${MIN_SAMPLE}건입니다(현재 A ${a.impressions} · B ${b.impressions}).`);
     }
 
     return {

@@ -252,7 +252,7 @@ export function planCrossChannel(input: PlanInput): CrossChannelPlan {
       channel: 'instagram-reels',
       patternId: 'instagram-reels',
       label: patternLabel('instagram-reels'),
-      appliedIn: `훅 ${PATTERN_BY_CHANNEL['instagram-reels'].hookWindowSec}초 · ${angle.hookStyle} · CTA 1개`,
+      appliedIn: `훅 ${PATTERN_BY_CHANNEL['instagram-reels'].hookWindowSec}초 · ${angle.hookStyle} · 마지막 유도 1개`,
     },
     {
       channel: 'youtube-shorts',
@@ -270,7 +270,7 @@ export function planCrossChannel(input: PlanInput): CrossChannelPlan {
       channel: platform,
       patternId: platform,
       label: patternLabel(platform),
-      appliedIn: `H2 ${blog.outline.length}개 + FAQ ${blog.faq.length}개 · 약 ${blog.targetChars.toLocaleString('ko-KR')}자`,
+      appliedIn: `소제목 ${blog.outline.length}개 + 자주 묻는 질문 ${blog.faq.length}개 · 약 ${blog.targetChars.toLocaleString('ko-KR')}자`,
     },
   ];
 
