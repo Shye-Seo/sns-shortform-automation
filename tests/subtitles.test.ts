@@ -162,8 +162,9 @@ describe('cue grouping', () => {
     for (const cue of cues) {
       expect(cue.words.length).toBeGreaterThanOrEqual(2);
     }
-    // 첫 카드가 낱말 하나로 남지 않는다.
-    expect(cues[0]?.lines.join(' ').trim()).not.toBe('개발자의');
+    // 첫 카드가 낱말 하나로 남지 않고, 쉼표에서 끊긴다.
+    expect(cues[0]?.lines.join(' ').trim()).toBe('개발자의 일상,');
+    expect(cues[1]?.lines.join(' ').trim()).toContain('계획부터');
   });
 
   it('maps words onto the lines they are drawn on', () => {

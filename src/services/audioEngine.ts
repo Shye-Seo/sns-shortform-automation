@@ -343,20 +343,25 @@ export function buildCues(words: WordTiming[], options: CueBuildOptions = {}): C
         const cps = duration > 0 ? text.length / duration : Number.POSITIVE_INFINITY;
         return fitsBox(words) && duration <= config.maxCueSec + 0.3 && cps <= config.maxCps * 1.15;
       };
-      let applied = false;
-      // 두 카드 모두 최소 두 낱말을 갖도록 움직인다. 한 낱말만 남기는 재분배는
+      // 두 카드 모두 최소 두 낱말을 갖게만 움직인다. 한 낱말만 남기는 재분배는
       // 없던 고아 카드를 새로 만든다("개발자의" / "일상, 계획부터 세우지 마세요").
-      for (let move = previous.length - 2; move >= 1; move -= 1) {
+      // 후보 중에서는 (1) 앞 카드가 쉼표에서 끝나는 분할을 먼저 고르고,
+      // (2) 없으면 가장 적게 옮기는 분할을 고른다. 낱말을 적게 옮길수록
+      // "매일 쓰는 것만 손이 닿는" 같은 구가 그대로 남는다.
+      const options: Array<{ head: WordTiming[]; tail: WordTiming[]; comma: boolean }> = [];
+      for (let move = 1; move <= previous.length - 2; move += 1) {
         const head = previous.slice(0, previous.length - move);
         const tail = [...previous.slice(previous.length - move), ...group];
-        if (head.length >= 2 && tail.length >= 2 && canDraw(head) && canDraw(tail)) {
-          rebalanced[rebalanced.length - 1] = head;
-          rebalanced.push(tail);
-          applied = true;
-          break;
-        }
+        if (head.length < 2 || tail.length < 2 || !canDraw(head) || !canDraw(tail)) continue;
+        const lastWord = head[head.length - 1] as WordTiming;
+        options.push({ head, tail, comma: /,$/u.test(lastWord.punctuation) || /,$/u.test(lastWord.text) });
       }
-      if (applied) continue;
+      const chosen = options.find((option) => option.comma) ?? options[0];
+      if (chosen) {
+        rebalanced[rebalanced.length - 1] = chosen.head;
+        rebalanced.push(chosen.tail);
+        continue;
+      }
     }
     rebalanced.push(group);
   }
