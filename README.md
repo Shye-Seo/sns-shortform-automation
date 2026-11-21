@@ -1,6 +1,6 @@
 <p align="center">
   <a href="https://github.com/Shye-Seo/sns-shortform-automation/actions/workflows/ci.yml"><img alt="CI Pipeline" src="https://github.com/Shye-Seo/sns-shortform-automation/actions/workflows/ci.yml/badge.svg" /></a>
-  <img alt="Tests" src="https://img.shields.io/badge/tests-691_(Vitest_516_%C2%B7_PHPUnit_175)-2E7D32?style=flat-square" />
+  <img alt="Tests" src="https://img.shields.io/badge/tests-750_(Vitest_565_%C2%B7_PHPUnit_185)-2E7D32?style=flat-square" />
   <img alt="Web demo" src="https://img.shields.io/badge/web_demo-live_(GitHub_Pages)-13315C?style=flat-square" />
 </p>
 
@@ -12,8 +12,8 @@
 그것을 **수십 개 테넌트 · 수백 편 · 플랫폼 쿼터 안에서** 안정적으로 운영하는 것은
 완전히 다른 문제입니다. 이 저장소는 대규모 배포 환경의 안정성과 확장성 문제를 풉니다.
 
-`TypeScript` · `Node.js 20` · `ffmpeg` · `Vitest 516 tests` · `커버리지 88.8%`
-`PHP 8.2` · `MySQL 8.0` · `Meta Graph API` · `NCP SENS 알림톡` · `PHPUnit 175 tests`
+`TypeScript` · `Node.js 20` · `ffmpeg` · `Vitest 565 tests` · `커버리지 89.7%`
+`PHP 8.2` · `MySQL 8.0` · `Meta Graph API` · `NCP SENS 알림톡` · `PHPUnit 185 tests`
 
 | 계층 | 무엇을 보장하나 |
 |------|------------------|
@@ -27,13 +27,14 @@
 | **서버 계층(DB·API)** | MySQL 8.0 기반 작업 원장 보존 및 PHP 백엔드 워커의 `SKIP LOCKED` 기반 동시성 경합 없는 작업 선점 |
 
 ```bash
-npm ci && npm run verify      # 516 tests, 네트워크·ffmpeg 없이
+npm ci && npm run verify      # 565 tests, 네트워크·ffmpeg 없이
 npm run cli -- studio         # 터미널 데모 콘솔
 npm run dev:web               # 브라우저 콘솔 → http://127.0.0.1:4173
 ```
 
 **웹 데모**: <https://shye-seo.github.io/sns-shortform-automation/> — `main` / `/docs` 소스로 배포되어
-있습니다. 9:16 스튜디오, 게시물별 댓글 쿠폰 규칙, 예약 발행 한도, 훅 A/B 비교를 설치 없이 씁니다(18장).
+있습니다. 9:16 스튜디오, 게시물별 댓글 쿠폰 규칙(팔로워 전용·발송 간격 포함), 발행 전 규제·안전영역 점검,
+편집 패키지 내려받기, 예약 발행 한도, 훅 A/B 비교를 설치 없이 씁니다(18장, 22장).
 화면에는 엔진 상태값(`dlq`, `failed`)이나 영문 오류 로그를 그대로 그리지 않고, 그 뜻과 다음 할 일을
 한국어로 옮겨 보여 줍니다(`web/model/labels.ts`).
 
@@ -614,8 +615,8 @@ npm run cli -- crosschannel --topic "냉장고 재료로 10분 저녁" --llm --o
 ## 12. 검증
 
 ```bash
-npm run verify    # typecheck + typecheck:web + lint + 516 tests
-npm run coverage  # 88.8% statements · 81.5% branches
+npm run verify    # typecheck + typecheck:web + lint + 565 tests
+npm run coverage  # 89.7% statements · 81.9% branches
 ```
 
 | 영역 | 파일 | 건수 |
@@ -640,7 +641,12 @@ npm run coverage  # 88.8% statements · 81.5% branches
 | 인터랙티브 쿠폰 엔진 (멱등·어뷰징·5초 데드라인·1회용 토큰·풀 경합·1,000건) | `interactiveCouponDispatcher.test.ts` | 39 |
 | 크로스채널 기획 (카테고리·앵글 변주·채널 구조·리퍼포징 순서) | `crossChannel.test.ts` | 22 |
 | 인터랙티브 콘솔 (React: 수령·퍼널 카드) | `interactiveConsole.test.tsx` | 2 |
-| **합계** | 28개 파일 | **516** |
+| **주제 도메인 대본 (형식>소재 분류·12도메인 4비트·주제어 반복 상한·훅 3.5초)** | `domainScript.test.ts` | **8** |
+| **30초 프리셋 전수 검수 (12도메인 × 3포맷·글자 상한·낱말 경계 절단·태그 출처)** | `osmu30.test.ts` | **16** |
+| **편집 패키지 (SRT 시간·CSV 인용·ZIP 중앙디렉터리/CRC·파일명 정리)** | `editPackage.test.ts` | **7** |
+| **발행 전 점검 (규제·금칙 표현·개인정보·9:16 안전영역·상한·정상 대본 오탐 0)** | `compliance.test.ts` | **7** |
+| **팔로워 전용·슬로우 큐 (확인 안 됨 차단·예산 미소모·간격/데드라인 이동)** | `couponAudience.test.ts` | **8** |
+| **합계** | 33개 파일 | **565** |
 
 네트워크·ffmpeg 없이 전부 통과합니다. 외부 API는 fake HTTP와 주입된 리프레셔로,
 재시도는 주입된 시계·sleep으로 검증합니다.
@@ -652,12 +658,12 @@ npm run coverage  # 88.8% statements · 81.5% branches
 
 | 검수 항목 | 실행 | 결과 |
 |-----------|------|------|
-| 타입·린트·단위 테스트 | `npm run verify` | ✅ 28개 파일 516건 통과 |
-| 커버리지 | `npm run coverage` | 88.79% statements · 81.46% branches |
+| 타입·린트·단위 테스트 | `npm run verify` | ✅ 33개 파일 565건 통과 |
+| 커버리지 | `npm run coverage` | 89.70% statements · 81.92% branches |
 | 실제 렌더 | `craft → review --approve → render --execute` (ffmpeg 7.0.2) | ✅ 1080×1920 · 33.13s · 1.2MB · 프리플라이트 12/13(경고 1) |
 | 큐·워커 | `queue run --jobs 11 --concurrency 3 --fail-every 7` | ✅ 시도 13 · 성공 10 · DLQ 1 · 최대 동시 워커 3 |
 | MySQL 스키마 | `php bin/migrate.php --fresh --seed --verify` | ✅ 13개 테이블 · 인덱스·FK 확인 |
-| PHP 단위·통합 | `composer test` (MySQL 8.0.40 연결) | ✅ 15개 파일 175건 · 578 assertions (DB 없으면 151 + 24 skip) |
+| PHP 단위·통합 | `SHORTFORM_INTEGRATION=1 DB_UNIX_SOCKET=… vendor/bin/phpunit` (MySQL 8.0.40 연결) | ✅ 16개 파일 185건 · 619 assertions · skip 0 |
 | 렌더 큐 워커 | `php bin/worker.php --once` | ✅ job #1 선점 → 완료 → 큐 현황 출력 |
 | HTTP 서버 | `php -S` 후 `/health`·웹훅 | ✅ `/health` 200, `GET /webhooks/instagram` 챌린지 반환, 서명 위조 403 |
 | 게시물 발행 웹훅 | 서명된 `media` 이벤트 전송 | ✅ `applied 1` 후 `publish_logs.status=published`, 재전송은 `duplicates 1` |
@@ -707,6 +713,9 @@ npm run coverage  # 88.8% statements · 81.5% branches
 | 콘솔/API | ✅ text·HTML·Prometheus·JSON 서빙 및 DLQ 액션 API 연동 |
 | 60초 렌더 파이프라인 | ✅ ffmpeg 실제 인코딩·프리플라이트 통과 (6.0 산출물, 7.0.2 재현 확인) |
 | 웹 데모 콘솔 (GitHub Pages) | ✅ 정적 번들이 엔진 모듈을 그대로 실행. Meta·YouTube·Redis·SENS 실호출은 없음 |
+| 편집 패키지 (.srt + 컷 타임시트 zip) | ✅ 브라우저에서 생성·다운로드. ZIP 중앙 디렉터리·CRC를 테스트로 대조. 렌더된 실제 영상과의 프레임 일치 검증은 미실시 |
+| 발행 전 규제·안전영역 스캐너 | ✅ 규칙 13개 + 자막 폭·겹침·길이 검사, 차단 시 발행 버튼 잠금. 법률 검토 아님(§22.2) |
+| 팔로워 전용 · 슬로우 큐 | ✅ 도메인·MySQL 컬럼·디스패처·브라우저 엔진·테스트. 팔로워 여부는 웹훅 페이로드가 실어 줄 때만 판정(실 Graph API 조회 미검증) |
 | 인스타 댓글 웹훅 → PHP | ✅ `POST /webhooks/instagram`이 `comments`를 서명 검증 후 `InteractiveCouponDispatcher`로 넘겨 MySQL 큐에 적재하고, `bin/coupon-worker.php`가 토큰 발급·발송·이력 기록까지 수행. `GET /c/{token}` 수령까지 로컬 MySQL 8.0.40에서 엔드투엔드 확인. 실 Meta DM·SENS 호출은 자격 증명이 없어 미검증(§17.8) |
 
 **로드맵**:
@@ -749,8 +758,19 @@ platform built on a working 60-second shortform pipeline.
 - **Quota planning** — pending jobs get concrete publish times under a fixed daily budget:
   spillover moves to the next window instead of failing, slot windows and a minimum gap are
   applied at the same time, and priority decides who keeps their preferred time.
-- **Verification** — 516 Vitest cases, 88.8% statement coverage, no network and no ffmpeg
-  required (injected clock, RNG, sleep, HTTP and token refresher).
+- **Topic-aware script engine** — two layers: what the video is about (`topicProfile`) and how it
+  speaks (12 script domains). A genre suffix ("…일상", "…브이로그") outranks a subject word, so
+  "퇴사한 30대 개발자의 일상" becomes a daily vlog instead of résumé advice. Hooks are chosen to fit
+  a 3.2s budget, and the topic noun appears at most twice per script.
+- **Comment → DM coupon drop** — 5s SLA, idempotent webhooks, one-time HMAC links, and a
+  follower-only filter plus a send-interval (slow queue) whose deadline moves with the slot.
+- **Edit package** — one click turns the studio timeline into a `.srt` plus cut sheets
+  (`.csv`/`.txt`) inside a store-only ZIP written in the browser (CRC-32, UTF-8 names).
+- **Pre-publish scan** — regulated/absolute claims, personal data and 9:16 safe-area overflow
+  (caption width, platform-UI collisions) block the publish button before upload.
+- **Verification** — 565 Vitest cases, 89.7% statement coverage, no network and no ffmpeg
+  required (injected clock, RNG, sleep, HTTP and token refresher); 185 PHPUnit cases over
+  MySQL 8.0 with 0 skips.
 
 ```bash
 npm ci && npm run verify
@@ -973,9 +993,42 @@ npx tsx -e "...simulateCommentStorm({ comments: 1000, concurrency: 256, clickRat
   같은 사람이 다른 댓글로 여러 장 받는 경우는 어뷰징 점수(작성자 버스트)로만 걸립니다.
 - **부하 수치는 인프로세스 시뮬레이션입니다.** 17.6의 초당 처리량은 Node 런타임 안에서 잰 값이고,
   이번에 붙인 MySQL 경로의 처리량은 별도로 측정하지 않았습니다. 운영 TPS로 주장하지 않습니다.
+- **팔로워 여부는 Meta 댓글 웹훅에 없습니다.** 그래서 `author_follows_account`(팔로워 전용) 판정은
+  팔로워 목록을 동기화하는 쪽이 `from.is_follower`로 실어 보낼 때만 동작하고, 값이 없으면 **보내지
+  않는 쪽**으로 정합니다(§17.9). 실제 Graph API 팔로워 조회는 자격 증명이 없어 미검증입니다.
 - **HMAC 키 관리는 문서화만 되어 있습니다.** 키 회전용 이전 키(`COUPON_TOKEN_SIGNING_KEY_OLD`)는
   지원하지만 KMS 연동은 없습니다. 운영에서는 `COUPON_TOKEN_SIGNING_KEY`를 필수로 두고(미설정 시
   기동 실패) KMS/Secret Manager에서 주입해야 합니다.
+
+### 17.9 팔로워 전용 필터와 슬로우 큐 — "누구에게, 어떤 간격으로"
+
+쿠폰을 아끼는 문제가 아니라 **DM을 보내는 방식**의 문제입니다. 인스타는 짧은 시간에 같은 계정에서
+DM이 몰리면 스팸 신호로 읽고, 모르는 사람에게 먼저 보낸 DM은 신고로 이어집니다. 두 가지를 캠페인
+설정으로 뺐습니다.
+
+| 설정 | 컬럼 | 동작 |
+|------|------|------|
+| 팔로워만 | `interactive_campaigns.follower_only` | 작성자가 팔로워임이 확인된 댓글에만 DM. 확인되지 않은(`null`) 작성자는 건너뛴다 |
+| 발송 간격 | `interactive_campaigns.send_interval_seconds` (0~3,600) | 같은 캠페인의 DM을 이 간격만큼 띄운다. 0이면 즉시 |
+
+- **필터는 예산보다 먼저.** 팔로워가 아닌 댓글은 `webhook_interaction_events`에 `IGNORED` /
+  `FOLLOWER_ONLY`로 남기고 큐에 넣지 않습니다. 발급 장수도 쓰지 않으므로, 뒤에 온 팔로워가
+  `BUDGET_EXHAUSTED`로 막히지 않습니다(테스트).
+- **간격은 SLA를 깨지 않습니다.** 발송 가능 시각을 `max(지금, 마지막 예약 + 간격)`으로 밀고,
+  데드라인은 **그 시각에서 다시 5초**를 셉니다. 간격 10초에 세 건이면 `0s / +10s / +20s`에 나가고
+  데드라인은 각각 `+5s / +15s / +25s`입니다. 늦게 보내는 게 아니라 줄을 서는 것입니다.
+- 웹훅 응답에는 `comments.filtered`가 추가되어, "몇 건이 팔로워가 아니어서 지나갔는지"를 바로 봅니다.
+- 브라우저 콘솔(§18)도 같은 규칙을 `src/core/interactiveCouponDispatcher.ts`에서 돌립니다.
+  댓글 → DM 쿠폰 탭에서 **팔로워만** 스위치와 **즉시/3초/10초/30초** 간격을 고르고, 데모 댓글을
+  `팔로워 / 팔로워 아님 / 확인 안 됨`으로 넣어 결과를 확인할 수 있습니다.
+
+```
+팔로워만 ON, 간격 10초
+  댓글(확인 안 됨) → IGNORED / FOLLOWER_ONLY     (장수 미소모)
+  댓글(팔로워 아님) → IGNORED / FOLLOWER_ONLY
+  댓글(팔로워)      → QUEUED  available_at = now
+  댓글(팔로워)      → QUEUED  available_at = now + 10s, deadline = +15s
+```
 
 ---
 
@@ -1137,25 +1190,72 @@ npm run cli -- quota plan --provider youtube --jobs 8 --slot-start 08:00 --slot-
 
 수정은 세 층으로 나눴습니다.
 
-### 20.1 주제 → 카테고리 (`topicProfile`)
+### 20.1 두 층의 분류 — `topicProfile`(무엇에 대한 영상인가) + `scriptDomains`(어떤 말로 말하는가)
 
-주제 문자열에서 카테고리(여행·제품·정보·요리·수납·뷰티·돈·건강·커리어·일상)를 점수로 고르고,
-그 카테고리의 **레버**를 뽑습니다. 여행은 `이동 동선`, 제품 리뷰는 `소음·무게·충전`, 신청·조건은
-`자격 조건`, 요리는 `재료 순서`입니다. 훅은 이 레버를 가리키므로 "주제만 바꾼 같은 대본"이 나오지 않습니다.
+2026-11-21 피드백: `"퇴사한 30대 개발자의 일상"`을 넣었더니 `"길게 쓰기부터 버리세요"`,
+`"제목과 첫 문장만 다시 씁니다"`가 나왔습니다. 원인은 분류기가 **'개발'이라는 소재 하나**만 보고
+커리어(문서) 카테고리를 골랐고, 그 카테고리의 문장 은행이 글쓰기 조언이었기 때문입니다.
+영상의 형식은 "일상 기록"인데 소재만 따라간 것입니다.
 
-### 20.2 앵글 × 변주 (`topicDraftWriter`)
+그래서 분류를 두 층으로 나눴습니다.
 
-| 앵글 | 훅 방식 | 잘 맞는 주제 |
-|------|---------|--------------|
-| 문제해결형 | 질문형 · 막히는 지점 지적 | 수납, 동선, 조건 |
-| 숫자비교형 | 숫자 제시형 | 시간·비용·개수로 약속되는 주제 |
-| 체크리스트형 | 목록 예고형 | 신청·구매·여행 |
-| 비포애프터형 | 결과 선노출형 | 리뷰·인테리어·운동 |
-| 반전형 | 통념 반박형 | 모두가 같은 말을 하는 주제 |
+| 층 | 모듈 | 정하는 것 | 쓰이는 곳 |
+|----|------|-----------|-----------|
+| 주제 분류 | `topicProfile` | 무엇에 대한 영상인가(여행·제품·정보·요리·수납·뷰티·돈·건강·커리어·일상)와 레버(이동 동선·소음·무게·자격 조건·재료 순서) | 블로그·롱폼 구조, 배지 |
+| 대본 도메인 | `scriptDomains` | 어떤 말로 말하는가 — 12개 도메인(일상·커리어·제품·뷰티·살림·레시피·여행·카페·재테크·콘텐츠·정보·운동) | 4비트 대본, 태그, 캡션 |
 
-`variation`이 1 올라갈 때마다 앵글이 5개를 순환하고, 같은 앵글 안에서도 문장 인덱스와 단계 구간이
-함께 밀립니다. 그래서 연속 6번을 눌러도 훅·문제·단계·CTA·캡션이 모두 다릅니다(테스트로 고정).
-단계 문장은 카테고리 뱅크에서 **연속 구간**으로 뽑기 때문에 순서가 깨지지 않습니다.
+`scriptDomains`의 분류는 **가중치 합 + 장르 어미**입니다. `…의 일상`, `… 브이로그`처럼 끝이 형식을
+말하면 9점이라, 소재 단어(퇴사 +3, 개발 +3)를 합쳐도 뒤집히지 않습니다. 동점이면 더 좁은 도메인이
+이깁니다(카페 > 여행, 뷰티 > 제품). 장소는 도시보다 동네를 먼저 잡고(`부산 전포` → `전포`),
+기간은 `2박3일`을 통째로 읽습니다.
+
+```
+퇴사한 30대 개발자의 일상        → 일상·브이로그 (이름: 개발자의 일상, 사람: 퇴사한 30대 개발자)
+퇴사 후 첫 달 정리             → 퇴사·커리어·개발 (이름: 퇴사 후 첫 달)
+부산 전포 카페 리스트           → 카페·맛집 (이름: 전포 카페, 장소: 전포)
+겨울 제주 여행 2박3일 코스       → 여행 (이름: 제주 2박3일)
+인스타 릴스 대본 쓰는 법        → 콘텐츠·글쓰기 (이름: 인스타 릴스 대본)
+```
+
+### 20.2 도메인별 4비트 + 앵글 × 변주 (`domainScriptWriter`)
+
+도메인마다 훅·문제·해결·마지막 유도를 **따로 씁니다**. 은행 하나에 주제 명사를 끼워 넣는 방식이
+아니라, 그 도메인에서 실제로 하는 말을 문장으로 두고 (도메인, 앵글, 변주) 세 값으로 고릅니다.
+
+| 앵글 | 훅 방식 | 예 (일상·브이로그) |
+|------|---------|--------------------|
+| 문제해결형 | 질문형 · 막히는 지점 지적 | 개발자의 일상, 하루가 자꾸 밀리나요? |
+| 숫자비교형 | 숫자 제시형 | 개발자의 일상, 하루 세 장면이면 됩니다 |
+| 체크리스트형 | 목록 예고형 | 개발자의 일상, 시작 전에 정할 건 하나 |
+| 비포애프터형 | 결과 선노출형 | 개발자의 일상, 한 달이면 달라집니다 |
+| 반전형 | 통념 반박형 | 개발자의 일상, 계획부터 세우지 마세요 |
+
+- **훅은 3.2초 안에서 고른다.** 마침표 하나가 0.24초를 먹어서, 3.25초 상한을 넘긴 훅은 엔진이
+  `"제주 2박3일"`만 남기고 문장을 잘라 버린다. 그래서 훅에는 마침표를 붙이지 않고, 긴 이름은
+  (전체 → 장소 → 앞 두 낱말 → 뒤 두 낱말 → 핵심 명사) 순서로 **두 문장이 들어가는 가장 긴 이름**을 쓴다.
+- **주제어는 두 번까지만.** 훅에서 한 번, 문제에서 한 번. 해결 단계에 다시 넣으면
+  `"주방 수납은 … 주방 수납은 …"`처럼 기계적으로 반복된다(테스트가 상한 2를 고정).
+- **사람 묘사는 사람일 때만.** `"퇴사한 30대 개발자도 처음엔 아침에 다 끝내려고 합니다"`처럼
+  문제 문장에 한 번 쓴다. `"부산 전포"`, `"겨울 제주 여행"`처럼 사람이 아닌 수식어는 버린다.
+- `variation`이 1 올라갈 때마다 앵글이 5개를 순환하고, 같은 앵글 안에서도 문장 인덱스와 단계 구간이
+  함께 밀립니다. 연속 6번을 눌러도 훅·문제·단계·CTA·캡션이 모두 다릅니다(테스트로 고정).
+- 단계 문장은 도메인 은행에서 **연속 구간**으로 뽑기 때문에 순서가 깨지지 않습니다.
+
+실제 출력(45초, 변주 0):
+
+```
+[훅]       개발자의 일상, 계획부터 세우지 마세요
+[문제]     개발자의 일상을 남기려고 카메라를 켜면 정작 하루는 더 흐트러집니다.
+[해결 1]   일어나는 시간만 먼저 고정합니다. 나머지 순서는 그날 정해도 하루가 무너지지 않습니다.
+[해결 2]   하루에 하나만 정해두고, 끝나면 바로 다음 걸 적습니다. 목록이 길면 시작을 못 합니다.
+[해결 3]   카메라를 켜두고 그대로 남깁니다. 편집은 10분 안에 끝내야 다음 날도 켭니다.
+[해결 4]   저녁에 세 줄만 적습니다. 무엇을 했고, 어디서 막혔고, 내일 뭘 할지입니다.
+[마지막]   다음 기록도 같은 순서로 올립니다. 저장해두세요.
+```
+
+**한계**: 도메인 은행은 12개 주제군에 대한 **휴리스틱 문장 풀**입니다. 어떤 주제든 그럴듯한 4비트를
+만들지만, 실제 그 사람의 하루를 관찰한 문장은 아닙니다. 문장을 고치는 일은 사람이 하고, 엔진은
+"어떤 말투로 말할지"와 "길이·중복"을 지킵니다. 영어 주제도 한국어 은행으로 쓰입니다(영어 은행 없음).
 
 ### 20.3 채널 구조 (`patternLibrary`)와 분석 (`contentAnalyzer`)
 
@@ -1184,8 +1284,9 @@ npm run cli -- crosschannel --topic "겨울 제주 여행 2박3일 코스" --out
 ```
 
 **한계**: 패턴은 공개 크리에이터 가이드와 상위 글에서 반복되는 구조를 규칙화한 휴리스틱이며,
-조회수·저장률 같은 성과를 실측한 데이터가 아닙니다. 한국어 카테고리 뱅크가 기준이라 영어 주제는
-기존 휴리스틱 작가로 폴백합니다. LLM 경로는 응답 스키마를 검증하지만 사실 관계를 검증하지 않습니다.
+조회수·저장률 같은 성과를 실측한 데이터가 아닙니다. 문장 은행은 한국어 기준이라 영어 주제도
+한국어 대본으로 나옵니다(영어 은행 없음). LLM 경로는 응답 스키마를 검증하지만 사실 관계를
+검증하지 않습니다.
 
 ---
 
@@ -1233,6 +1334,84 @@ A/B 카드는 "이미 노출을 쓴 뒤"의 질문에 답한다. 이 표는 그 
 | 단위 (`osmu.test.ts`, 12) | 편집한 대본이 캡션에 반영(주제만으로는 나올 수 없는 문장) · 3포맷 순서 · 릴스 태그/CTA/글자 수 · 쇼츠 제목·타임라인 · 스레드 분할 상한 · 훅 경고 · 결정성 |
 | 단위 (`hookPatternSim.test.ts`, 9) | 4유형 순서·범위 · 저장/공유 리더 각 1개 · 3초/3.5초 감점 · 숫자 주제 보정 · 카테고리 배수 노출 · 결정성 |
 | jsdom (`webConsole.test.tsx`, +2) | OSMU 탭에서 3포맷 전환·스레드 분할 표시, 훅 탭에서 4유형 표와 `실측 아님` 문구 |
+
+---
+
+## 22. 실전 기능 3종 — 편집 패키지 · 발행 전 점검 · 팔로워/슬로우 큐
+
+스튜디오에서 대본을 만든 다음에 실제로 막히는 세 지점을 붙였습니다. **편집자가 쓸 파일이 없다**,
+**올리기 전에 규제 표현과 화면 잘림을 확인할 방법이 없다**, **DM을 누구에게 어떤 간격으로 보낼지
+정할 수 없다**입니다.
+
+### 22.1 원클릭 편집 패키지 — 자막 `.srt` + 컷 타임시트 `.csv/.txt`를 zip으로
+
+스튜디오 오른쪽 위 **편집 패키지** 버튼을 누르면 브라우저가 zip 하나를 내려받습니다. 서버 왕복이
+없습니다 — 타임라인과 자막 큐는 이미 화면에 있고, 같은 계산을 서버에 다시 시키면 미리보기와 다른
+숫자가 나올 수 있기 때문입니다.
+
+| 파일 | 내용 | 쓰는 곳 |
+|------|------|---------|
+| `<제목>.srt` | 큐마다 `번호 / 00:00:02,490 --> 00:00:03,090 / 두 줄` | 프리미어·다빈치·유튜브 자막 |
+| `<제목>_컷타임시트.csv` | 컷 번호·비트·시작·끝·길이·발화 초·화면 자막·나레이션·촬영 메모 | 편집 프로그램 재편집, 협업 공유 |
+| `<제목>_컷타임시트.txt` | 같은 내용을 사람이 훑기 좋게 | 편집자에게 붙여넣기 |
+
+- **zip은 직접 씁니다.** 텍스트 몇 개에 deflate 이득이 없어 압축 없이(store) 쓰고, CRC-32와
+  중앙 디렉터리는 ZIP 표준대로 채웁니다. 파일 이름은 UTF-8 플래그(`0x0800`)를 세워 한글이
+  깨지지 않습니다. 테스트가 zip 바이트를 다시 읽어 이름·내용·CRC를 대조합니다.
+- SRT 시간은 밀리초, 타임시트는 100분의 1초입니다. `0.345초`가 이진 부동소수에서 `34.4999…`가
+  되는 문제 때문에 타임시트는 100분의 1초로 먼저 반올림합니다.
+- 파일 이름에 쓸 수 없는 문자(`/ : * ? " < > |`)는 지우고, 제목이 비면 `shortform`으로 둡니다.
+
+### 22.2 발행 전 규제어·9:16 안전영역 스캐너 — 발행 버튼을 잠그는 검사
+
+발행 캘린더 탭 맨 위에 **발행 전 자동 점검** 카드가 있습니다. 지금 스튜디오에서 만들고 있는 대본을
+그대로 검사하고, **차단** 항목이 하나라도 있으면 발행 버튼이 눌리지 않습니다.
+
+| 종류 | 예 | 판정 |
+|------|-----|------|
+| 의료 효능·완치 | 완치, 치료 효과, 항암 효과, 만병통치 | 차단 |
+| 부작용 단정 | 부작용이 없습니다 | 차단 |
+| 재생·노화·면역 | 피부 재생, 노화 방지, 면역력 강화 | 차단 |
+| 최저가 보장 | 최저가 보장, 업계 최저 | 차단 |
+| 1위·유일 / 절대·완벽 | 국내 유일, 판매 1위, 완벽, 무조건, 100% 효과 | 주의 |
+| 결과 보장 | 다이어트 보장, 수익 보장, 원금 보장 | 주의 |
+| 개인정보 | 전화번호, 주민등록번호 형태 | 차단 / 계좌번호는 주의 |
+| 플랫폼 정책 | 외부 링크, 자동 DM 유도 | 주의 |
+| 9:16 안전영역 | 자막 한 줄이 자막 박스 폭을 넘음, 플랫폼 UI와 겹침 | 차단 |
+| 길이 | 훅 3.5초 초과, 캡션 2,200자 초과, 목표 길이 초과 | 차단 / 주의 |
+
+- 안전영역 수치는 스튜디오 모델이 이미 계산한 값(자막 박스 폭·글자 크기·겹침 결과)을 그대로 씁니다.
+  스캐너가 따로 계산하면 미리보기와 다른 숫자로 판정하게 됩니다.
+- 규칙 13개를 데이터로 두고(`SCAN_RULES`) 걸린 문자열·위치·고칠 방법을 함께 돌려줍니다.
+- **정직한 경계**: 법률 검토가 아닙니다. 방송통신심의·공정거래위원회가 문제 삼아 온 표현과 플랫폼
+  게시 정책에서 흔한 항목을 규칙으로 옮긴 것이고, 규칙에 없는 표현은 통과합니다. 정상 대본 12종에
+  오탐이 없는 것은 테스트로 고정했지만, "이 문장은 안전하다"를 보증하지는 않습니다.
+
+### 22.3 팔로워 전용 필터 + 발송 간격(슬로우 큐)
+
+백엔드·브라우저 양쪽에 같은 규칙으로 들어갔습니다. 자세한 동작과 데드라인 계산은 §17.9에 있고,
+여기서는 화면에서 무엇을 만질 수 있는지만 적습니다.
+
+- 댓글 → DM 쿠폰 탭의 규칙 카드에 **팔로워만** 스위치와 **즉시 / 3초 / 10초 / 30초** 간격이 있습니다.
+- 적용된 규칙 요약에 `대상: 팔로워로 확인된 사람만 · 발송 간격 10초`가 함께 남습니다.
+- 데모 댓글을 넣을 때 `팔로워 / 팔로워 아님 / 확인 안 됨`을 골라, 필터가 실제로 거르는지 볼 수 있습니다.
+- KPI의 "받은 댓글" 아래에 `팔로워 아님 N`이 붙어, 얼마나 걸러졌는지 바로 보입니다.
+
+### 22.4 30초 프리셋 전수 검수 — 발견한 것과 고친 것
+
+`crosschannel`(한 편을 세 곳으로)에서 30초는 문장이 가장 적은 프리셋이라 문제가 드러났습니다.
+12개 도메인을 30초로 변환해 **36개 포맷 전부**를 돌려 본 결과:
+
+| 발견 | 원인 | 수정 |
+|------|------|------|
+| 블로그 요약이 `189~246자`로 "250자 이상" 검사 실패 | 30초는 해결 단계가 2개뿐 | 영상 시간 순서 + 화면 자막 체크리스트를 덧붙임(정보 손실 없이 250자 이상) |
+| 쇼츠 설명 첫 두 줄이 같은 문장 | 제목이 훅과 같을 때 훅을 또 씀 | 제목=훅이면 설명은 문제 문장으로 시작 |
+| `… 정작 하루는 더 흐트…` 낱말 중간 절단 | 글자 수로 자름 | 공백·쉼표 경계에서 자르고, 조사 하나만 남는 절단 금지 |
+| 일상 주제에 `#포트폴리오 #첫문장` | 태그를 옛 카테고리 은행에서 가져옴 | 도메인 태그로 교체 |
+| 요약 제목 `… — 2단계로 정리` | 모든 도메인에 같은 꼬리 | 도메인별 꼬리(기록·코스·리스트·후기·조건…) |
+| `가기 전에 전포는 …` | 문제 문장 앞에 접두어를 붙임 | 접두어 없이 문장 그대로 |
+
+`tests/osmu30.test.ts`가 12개 도메인 × 3포맷을 한 번에 돌려 위 항목을 모두 다시 검사합니다.
 
 ## 작성자
 
