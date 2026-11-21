@@ -6,7 +6,6 @@ namespace Shortform\Controllers;
 
 use Shortform\Http\BadRequestException;
 use Shortform\Http\Request;
-use Shortform\Http\WebhookRejected;
 use Shortform\Security\MetaWebhookSignatureVerifier;
 
 /**
