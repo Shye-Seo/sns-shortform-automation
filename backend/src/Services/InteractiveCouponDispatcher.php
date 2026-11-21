@@ -172,10 +172,10 @@ final class InteractiveCouponDispatcher
     /**
      * Worker pass: claim due jobs, mint a one-time token, send, record the outcome.
      */
-    public function dispatchPending(int $limit = 50, ?string $workerId = null): DispatchReport
+    public function dispatchPending(int $limit = 50, ?string $workerId = null, ?int $campaignId = null): DispatchReport
     {
         $now = $this->clock->now();
-        $jobs = $this->queue->claimReady($now, $limit, $workerId);
+        $jobs = $this->queue->claimReady($now, $limit, $workerId, $campaignId);
 
         $counts = ['dispatched' => 0, 'retried' => 0, 'deadLettered' => 0, 'late' => 0, 'recovered' => 0];
         $worstLatency = 0.0;

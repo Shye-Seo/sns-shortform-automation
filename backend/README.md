@@ -234,7 +234,7 @@ SHORTFORM_INTEGRATION=1 composer test    # + 24 live MySQL tests
 | `Services/SensCouponSenderTest` | reviewed template code, digit-normalised recipient, 202 accepted, 429 retry, 4xx permanent |
 | `Services/CouponSenderFactoryTest` | dry-run default, live fails without credentials, per-channel routing, deterministic dry-run ids |
 | `Services/CouponDispatchLedgerTest` | attempt per send, token attached to the queue row, SENT row stops a second send after a crash |
-| `Integration/CouponPipelineIntegrationTest` | webhook → DB → worker → attempt → claim (fresh schema), CLAIMED lease reclaim, SLA late → DEAD_LETTER, 3 retries → DLQ, token CAS, fraud counters, claim limit |
+| `Integration/CouponPipelineIntegrationTest` | webhook → DB → worker → attempt → claim, CLAIMED lease reclaim, SLA late → DEAD_LETTER, 3 retries → DLQ, token CAS, fraud counters, claim limit (campaign-scoped, so a seeded demo DB is fine) |
 
 ## Operations
 

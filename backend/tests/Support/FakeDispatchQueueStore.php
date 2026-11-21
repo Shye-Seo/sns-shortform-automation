@@ -60,9 +60,12 @@ final class FakeDispatchQueueStore implements DispatchQueueStore
         return $id;
     }
 
-    public function claimReady(\DateTimeImmutable $now, int $limit, ?string $workerId = null): array
+    public function claimReady(\DateTimeImmutable $now, int $limit, ?string $workerId = null, ?int $campaignId = null): array
     {
-        $due = array_values(array_filter($this->rows, static function (array $row) use ($now): bool {
+        $due = array_values(array_filter($this->rows, static function (array $row) use ($now, $campaignId): bool {
+            if ($campaignId !== null && $row['campaignId'] !== $campaignId) {
+                return false;
+            }
             $active = $row['status'] === 'PENDING' || $row['status'] === 'RETRY';
 
             return $active && $row['availableAt'] <= $now;

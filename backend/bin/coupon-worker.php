@@ -31,10 +31,10 @@ use Shortform\Support\SystemClock;
 
 Env::load(__DIR__ . '/../.env');
 
-$options = getopt('', ['once', 'loop', 'limit::', 'sleep-ms::', 'max-cycles::', 'worker-id::', 'help']);
+$options = getopt('', ['once', 'loop', 'limit::', 'sleep-ms::', 'max-cycles::', 'worker-id::', 'campaign::', 'help']);
 
 if (isset($options['help'])) {
-    fwrite(STDOUT, "usage: php backend/bin/coupon-worker.php [--once|--loop] [--limit=50] [--sleep-ms=200] [--max-cycles=N] [--worker-id=NAME]\n");
+    fwrite(STDOUT, "usage: php backend/bin/coupon-worker.php [--once|--loop] [--limit=50] [--sleep-ms=200] [--max-cycles=N] [--worker-id=NAME] [--campaign=ID]\n");
     exit(0);
 }
 
@@ -42,6 +42,7 @@ $limit = max(1, min(500, (int) ($options['limit'] ?? 50)));
 $sleepMs = max(0, (int) ($options['sleep-ms'] ?? 200));
 $maxCycles = isset($options['max-cycles']) ? max(1, (int) $options['max-cycles']) : null;
 $workerId = (string) ($options['worker-id'] ?? (gethostname() . ':' . getmypid()));
+$campaignId = isset($options['campaign']) ? (int) $options['campaign'] : null;
 $loop = isset($options['loop']);
 
 try {
@@ -69,7 +70,7 @@ do {
     $startedAt = microtime(true);
 
     try {
-        $report = $coupon->dispatcher->dispatchPending($limit, $workerId);
+        $report = $coupon->dispatcher->dispatchPending($limit, $workerId, $campaignId);
     } catch (\Throwable $e) {
         fwrite(STDERR, 'coupon-worker: cycle failed: ' . $e->getMessage() . "\n");
         exit(1);

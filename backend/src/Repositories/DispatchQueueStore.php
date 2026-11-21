@@ -39,9 +39,18 @@ interface DispatchQueueStore
     /**
      * Atomically claim up to $limit jobs that are due at $now.
      *
+     * `$campaignId` narrows the claim to one campaign. It exists for isolating a
+     * noisy campaign or a test from the rest of the queue; the default (null) is the global
+     * worker that production runs.
+     *
      * @return list<DispatchJob>
      */
-    public function claimReady(\DateTimeImmutable $now, int $limit, ?string $workerId = null): array;
+    public function claimReady(
+        \DateTimeImmutable $now,
+        int $limit,
+        ?string $workerId = null,
+        ?int $campaignId = null,
+    ): array;
 
     /** Link the one-time token that was minted for this job (nullable until the worker runs). */
     public function attachToken(int $id, int $claimTokenId): void;

@@ -38,7 +38,8 @@ use Shortform\Tests\Support\ScriptedNotificationSender;
  *   · attempts are counted in SQL and the third retryable failure ends in DEAD_LETTER
  *   · the fraud counters read the stored subnet / normalised body, not an empty column
  *
- *   SHORTFORM_INTEGRATION=1 + migrated database (php bin/migrate.php --fresh --seed).
+ *   SHORTFORM_INTEGRATION=1 + migrated database. Queries and claims are scoped to this
+ *   test's campaign, so the demo seed can be present.
  */
 final class CouponPipelineIntegrationTest extends TestCase
 {
@@ -133,6 +134,13 @@ final class CouponPipelineIntegrationTest extends TestCase
             deepLinkBase: 'https://coupon.test/c',
             attempts: $this->attempts,
         );
+    }
+
+    private function dispatch(InteractiveCouponDispatcher $dispatcher, int $limit = 10): \Shortform\Domain\Interactive\DispatchReport
+    {
+        // Scoped to this test's campaign: on a seeded demo database the seed's PENDING rows
+        // are also past their deadline and would otherwise fill the claim.
+        return $dispatcher->dispatchPending($limit, 'it-worker', $this->campaignId);
     }
 
     private function webhook(InteractiveCouponDispatcher $dispatcher): InstagramWebhookController
@@ -235,7 +243,7 @@ final class CouponPipelineIntegrationTest extends TestCase
         $payload = json_decode((string) $rows[0]['payload'], true);
         self::assertSame($comment['id'], $payload['commentId'], 'DM 답신에 쓸 댓글 id가 큐에 있어야 한다.');
 
-        $report = $dispatcher->dispatchPending(10, 'it-worker');
+        $report = $this->dispatch($dispatcher);
         self::assertSame(1, $report->dispatched());
 
         $row = $this->queueRows()[0];
@@ -317,11 +325,11 @@ final class CouponPipelineIntegrationTest extends TestCase
         $this->deliver($webhook, $this->body($this->commentId()));
         $this->deliver($webhook, $this->body($this->commentId('쿠폰 주세요', 'it-author-2')));
 
-        $first = $this->queue->claimReady($this->clock->now(), 10, 'worker-a');
+        $first = $this->queue->claimReady($this->clock->now(), 10, 'worker-a', $this->campaignId);
         self::assertCount(2, $first);
         self::assertSame(0, $first[0]->attempts, '반환되는 attempts는 이번 선점 이전 값이어야 한다.');
 
-        $second = $this->queue->claimReady($this->clock->now(), 10, 'worker-b');
+        $second = $this->queue->claimReady($this->clock->now(), 10, 'worker-b', $this->campaignId);
         self::assertSame([], $second, '선점된 행(lease 유효)은 다른 워커에게 가지 않는다.');
 
         $attempts = $this->pdo->query('SELECT attempts FROM dispatch_queue WHERE campaign_id = ' . $this->campaignId)->fetchAll(\PDO::FETCH_COLUMN);
@@ -333,10 +341,10 @@ final class CouponPipelineIntegrationTest extends TestCase
         $dispatcher = $this->dispatcher();
         $this->deliver($this->webhook($dispatcher), $this->body($this->commentId()));
 
-        $this->queue->claimReady($this->clock->now(), 10, 'dead-worker');
+        $this->queue->claimReady($this->clock->now(), 10, 'dead-worker', $this->campaignId);
         $this->pdo->exec('UPDATE dispatch_queue SET claimed_at = DATE_SUB(claimed_at, INTERVAL 10 MINUTE) WHERE campaign_id = ' . $this->campaignId);
 
-        $reclaimed = $this->queue->claimReady($this->clock->now(), 10, 'next-worker');
+        $reclaimed = $this->queue->claimReady($this->clock->now(), 10, 'next-worker', $this->campaignId);
         self::assertCount(1, $reclaimed, '죽은 워커의 선점은 lease 만료 후 회수되어야 한다.');
         self::assertSame(1, $reclaimed[0]->attempts);
     }
@@ -350,12 +358,12 @@ final class CouponPipelineIntegrationTest extends TestCase
         // DATETIME in SQL would also trip the chk_dispatch_deadline constraint.
         $this->clock->advanceSeconds(120);
 
-        $report = $dispatcher->dispatchPending(10);
+        $report = $this->dispatch($dispatcher);
 
         self::assertSame(1, $report->deadLettered());
         self::assertSame(1, $report->counts['late']);
         self::assertSame('SLA_EXCEEDED', $this->queueRows()[0]['last_error']);
-        self::assertSame(0, (int) $this->pdo->query('SELECT COUNT(*) FROM dispatch_attempts')->fetchColumn());
+        self::assertSame(0, (int) $this->pdo->query('SELECT COUNT(*) FROM dispatch_attempts WHERE campaign_id = ' . $this->campaignId)->fetchColumn());
     }
 
     public function testThreeRetryableFailuresEndInDeadLetterWithAttemptRows(): void
@@ -364,11 +372,11 @@ final class CouponPipelineIntegrationTest extends TestCase
         $dispatcher = $this->dispatcher($sender, maxAttempts: 3);
         $this->deliver($this->webhook($dispatcher), $this->body($this->commentId()));
 
-        $dispatcher->dispatchPending();
+        $this->dispatch($dispatcher);
         $this->clock->advanceSeconds(1);
-        $dispatcher->dispatchPending();
+        $this->dispatch($dispatcher);
         $this->clock->advanceSeconds(2);
-        $report = $dispatcher->dispatchPending();
+        $report = $this->dispatch($dispatcher);
 
         self::assertSame(1, $report->deadLettered());
 
@@ -376,7 +384,7 @@ final class CouponPipelineIntegrationTest extends TestCase
         self::assertSame('DEAD_LETTER', $row['status']);
         self::assertSame(3, (int) $row['attempts']);
 
-        $attempts = $this->pdo->query('SELECT attempt_no, outcome FROM dispatch_attempts ORDER BY id')->fetchAll();
+        $attempts = $this->pdo->query('SELECT attempt_no, outcome FROM dispatch_attempts WHERE campaign_id = ' . $this->campaignId . ' ORDER BY id')->fetchAll();
         self::assertCount(3, $attempts);
         self::assertSame([1, 2, 3], array_map('intval', array_column($attempts, 'attempt_no')));
         self::assertSame(['RETRYABLE_FAILURE'], array_values(array_unique(array_column($attempts, 'outcome'))));
@@ -435,7 +443,7 @@ final class CouponPipelineIntegrationTest extends TestCase
         $webhook = $this->webhook($dispatcher);
 
         $this->deliver($webhook, $this->body($this->commentId()));
-        $dispatcher->dispatchPending();
+        $this->dispatch($dispatcher);
 
         $row = $this->queueRows()[0];
         $token = $this->pdo->query('SELECT * FROM instant_claim_tokens WHERE id = ' . (int) $row['claim_token_id'])->fetch();

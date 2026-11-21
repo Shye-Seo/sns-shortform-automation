@@ -82,26 +82,25 @@ final class MySqlDispatchQueueStore implements DispatchQueueStore
         return (int) $pdo->lastInsertId();
     }
 
-    public function claimReady(\DateTimeImmutable $now, int $limit, ?string $workerId = null): array
+    public function claimReady(\DateTimeImmutable $now, int $limit, ?string $workerId = null, ?int $campaignId = null): array
     {
         $limit = max(1, min(500, $limit));
         $worker = $workerId ?? (gethostname() . ':' . getmypid());
         $leaseCutoff = $now->modify('-' . $this->leaseSeconds . ' seconds');
 
-        return $this->connection->transaction(function (\PDO $pdo) use ($now, $limit, $worker, $leaseCutoff): array {
+        return $this->connection->transaction(function (\PDO $pdo) use ($now, $limit, $worker, $leaseCutoff, $campaignId): array {
+            $campaignClause = $campaignId === null ? '' : ' AND campaign_id = :campaign_id';
             $select = $pdo->prepare(
-                "SELECT id, campaign_id, interaction_event_id, channel, recipient_ref, idempotency_key,
-                        status, attempts, available_at, dispatch_deadline_at, created_at
-                   FROM dispatch_queue
-                  WHERE (status IN ('PENDING','RETRY') AND available_at <= :now)
-                     OR (status = 'CLAIMED' AND claimed_at <= :lease_cutoff)
-                  ORDER BY available_at, id
-                  LIMIT :limit
-                  FOR UPDATE SKIP LOCKED"
+                "SELECT id, campaign_id, interaction_event_id, channel, recipient_ref, idempotency_key, status, attempts, available_at, dispatch_deadline_at, created_at FROM dispatch_queue WHERE ((status IN ('PENDING','RETRY') AND available_at <= :now) OR (status = 'CLAIMED' AND claimed_at <= :lease_cutoff))"
+                . $campaignClause
+                . ' ORDER BY available_at, id LIMIT :limit FOR UPDATE SKIP LOCKED'
             );
             $select->bindValue('now', DbTime::format($now));
             $select->bindValue('lease_cutoff', DbTime::format($leaseCutoff));
             $select->bindValue('limit', $limit, \PDO::PARAM_INT);
+            if ($campaignId !== null) {
+                $select->bindValue('campaign_id', $campaignId, \PDO::PARAM_INT);
+            }
             $select->execute();
             $rows = $select->fetchAll();
 
