@@ -480,9 +480,9 @@ export function CouponPanel() {
           <div className="stack" style={{ gap: 6 }}>
             <Meter
               label="남은 쿠폰"
-              value={desk.poolGranted}
+              value={Math.max(0, applied.claimLimit - desk.poolGranted)}
               max={applied.claimLimit}
-              readout={`${desk.poolGranted}/${applied.claimLimit}장`}
+              readout={`${remaining}장 남음`}
               tone={remaining === 0 ? 'bad' : remaining < 15 ? 'warn' : 'ok'}
             />
             <Meter
