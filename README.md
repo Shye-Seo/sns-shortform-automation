@@ -657,7 +657,7 @@ npm run coverage  # 88.8% statements · 81.5% branches
 | 실제 렌더 | `craft → review --approve → render --execute` (ffmpeg 7.0.2) | ✅ 1080×1920 · 33.13s · 1.2MB · 프리플라이트 12/13(경고 1) |
 | 큐·워커 | `queue run --jobs 11 --concurrency 3 --fail-every 7` | ✅ 시도 13 · 성공 10 · DLQ 1 · 최대 동시 워커 3 |
 | MySQL 스키마 | `php bin/migrate.php --fresh --seed --verify` | ✅ 13개 테이블 · 인덱스·FK 확인 |
-| PHP 단위·통합 | `composer test` (MySQL 8.0.40 연결) | ✅ 175건 · 578 assertions (DB 없으면 151 + 24 skip) |
+| PHP 단위·통합 | `composer test` (MySQL 8.0.40 연결) | ✅ 15개 파일 175건 · 578 assertions (DB 없으면 151 + 24 skip) |
 | 렌더 큐 워커 | `php bin/worker.php --once` | ✅ job #1 선점 → 완료 → 큐 현황 출력 |
 | HTTP 서버 | `php -S` 후 `/health`·웹훅 | ✅ `/health` 200, `GET /webhooks/instagram` 챌린지 반환, 서명 위조 403 |
 | 게시물 발행 웹훅 | 서명된 `media` 이벤트 전송 | ✅ `applied 1` 후 `publish_logs.status=published`, 재전송은 `duplicates 1` |
