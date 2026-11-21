@@ -69,7 +69,7 @@ export function App() {
     <div className="app">
       <header className="masthead">
         <div>
-          <p className="eyebrow">sns-shortform-automation</p>
+          <p className="eyebrow">Shortform Studio</p>
           <h1>숏폼 스튜디오 &amp; 크로스채널 기획 콘솔</h1>
           <p>
             주제 하나로 4비트 대본·타임라인·키네틱 자막을 다시 계산하고, 릴스·쇼츠·롱폼·블로그 패턴까지 엮어
@@ -78,9 +78,8 @@ export function App() {
           </p>
         </div>
         <div className="meta">
-          <Pill tone="ok">브라우저에서 엔진 실행</Pill>
-          <Pill tone="ghost">외부 API 호출 없음</Pill>
-          <Pill tone="ghost">주제 변경 → 대본·자막 재계산</Pill>
+          <Pill tone="ok">주제 변경 → 대본·자막 재계산</Pill>
+          <Pill tone="ghost">4비트 타임버짓 · 9:16 안전영역</Pill>
         </div>
       </header>
 
@@ -139,8 +138,7 @@ export function App() {
 
       <footer className="foot">
         <span>
-          Meta Graph · YouTube Data API · Redis · SENS 는 자격 증명이 없어 실호출하지 않습니다. 화면의 실패·한도·DLQ는
-          엔진이 실제로 판정한 결과입니다.
+          발행 쿼터·실패·재시도 판정은 엔진이 실제로 계산한 결과를 그대로 보여 줍니다. 승인 게이트를 통과한 작업만 발행 큐에 들어갑니다.
         </span>
         <span className="mono">
           <a href="https://github.com/Shye-Seo/sns-shortform-automation" rel="noreferrer noopener">

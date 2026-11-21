@@ -912,6 +912,10 @@ npx tsx -e "...simulateCommentStorm({ comments: 1000, concurrency: 256, clickRat
 설치 없이 열리고, 클릭으로 동작합니다. 화면의 숫자는 미리 만들어 둔 값이 아니라 브라우저에서 같은
 엔진 모듈을 실행한 결과입니다.
 
+> 화면 표기 원칙: 콘솔 UI에는 벤더 자격 증명 유무·내부 클래스/이벤트 코드·스텁 여부를 표시하지 않습니다.
+> 이 콘솔은 Meta·YouTube·Redis·SENS 실호출 자격 증명 없이 동작하며, 그 범위는 이 README(§14 검증 범위)에만 적습니다.
+> 발행·쿼터·DLQ 판정은 엔진이 실제로 계산한 결과를 그대로 보여 줍니다.
+
 | 탭 | 확인하는 것 | 실행되는 코드 |
 |----|------------|---------------|
 | **9:16 스튜디오** | 주제를 바꾸면 대본·타임라인·자막이 즉시 다시 계산. '대본 다시 생성'은 앵글과 문장을 함께 교체. 안전영역 가이드, 재생 위치에 맞춘 단어별 자막 강조, 발화 시 BGM 15% 감쇠 곡선 | `topicProfile`(분류), `topicDraftWriter`(주제·앵글별 대본), `scriptEngine`(`planTimeBudget`·`fitDrafts`·`buildTimeline`), `tts.estimateAlignmentFor`, `audioEngine`(`computeDuckingEnvelope`·`buildCues`), `videoCompositor`(`planOverlayLayout`·`checkLayoutCollisions`) |

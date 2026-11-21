@@ -425,7 +425,7 @@ export function CrossChannelPanel({ topic, onTopic, onBackToStudio }: CrossChann
 
           <Card title="LLM 연결" hint="키가 있으면 같은 스키마로 Claude가 다시 씁니다. 없으면 위 결과가 최종입니다">
             <div className="row between" style={{ marginBottom: 8 }}>
-              <span className="small muted">이 데모는 브라우저에 키가 없어 내장 패턴 엔진으로 실행됩니다.</span>
+              <span className="small muted">브라우저 내장 패턴 엔진으로 즉시 실행됩니다.</span>
               <Button small ghost onClick={() => setShowPrompt((value) => !value)}>
                 {showPrompt ? '프롬프트 닫기' : 'LLM 프롬프트 보기'}
               </Button>

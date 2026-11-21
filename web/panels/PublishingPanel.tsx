@@ -138,7 +138,7 @@ export function PublishingPanel() {
             ))}
           </div>
           <p className="note" style={{ marginTop: 12 }}>
-            슬롯을 발행하면 <strong>TenantRegistry.consume</strong>이 쿼터와 요청 버킷을 함께 차감합니다. 한도를 넘으면
+            슬롯을 발행하면 쿼터와 요청 버킷이 함께 차감됩니다. 한도를 넘으면
             발행 대신 이유를 돌려주고, 이 실패는 큐에 실제 작업으로 들어가 DLQ 경로를 탑니다.
           </p>
         </Card>
@@ -255,7 +255,7 @@ export function PublishingPanel() {
           </div>
         ) : (
           <p className="note" style={{ marginTop: 10 }}>
-            재시도를 누르면 <strong>DlqActionService</strong>가 운영자·시각·결과를 기록합니다. 감사 기록은 대시보드가
+            재시도를 누르면 운영자·시각·결과가 감사 기록에 남습니다. 감사 기록은 대시보드가
             상태를 바꾸는 것과 별개로 남습니다.
           </p>
         )}
@@ -273,8 +273,8 @@ export function PublishingPanel() {
           <div style={{ flex: '1 1 260px' }}>
             <h3>2. 재시도는 상태를 확인합니다</h3>
             <p className="small muted">
-              DLQ 또는 실패 상태만 재시도할 수 있습니다. 이미 완료된 작업을 다시 큐에 넣는 실수는 409로 거부되고 그
-              거부도 기록에 남습니다.
+              DLQ 또는 실패 상태만 재시도할 수 있습니다. 이미 완료된 작업을 다시 큐에 넣으면
+              거부되고 그 거부도 기록에 남습니다.
             </p>
           </div>
           <div style={{ flex: '1 1 260px' }}>

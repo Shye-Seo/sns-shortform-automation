@@ -154,7 +154,7 @@ export function CouponPanel() {
                 onClick={() => {
                   void submit({ text: '쿠폰', reuseAuthor: true });
                 }}
-                title="같은 계정이 10초 안에 3번 쓰면 AUTHOR_BURST 40점 + 짧은 본문 15점"
+                title="같은 계정이 10초 안에 3번 쓰면 40점, 짧은 본문은 15점을 더해 차단 기준을 넘기면 발급하지 않습니다."
               >
                 같은 계정으로 도배
               </Button>
@@ -172,8 +172,8 @@ export function CouponPanel() {
               </Button>
             </div>
             <p className="note">
-              웹훅 본문은 Meta 형식 그대로 만들고 <strong>HMAC-SHA256 서명</strong>을 붙여
-              <strong> dispatcher.verifySignature</strong>로 먼저 검증합니다. 서명이 틀리면 파싱조차 하지 않습니다.
+              댓글 웹훅은 <strong>서명 검증</strong>을 먼저 통과해야 처리됩니다. 서명이 틀린 요청은 파싱하지 않고 버리며,
+              본문이 비었거나 중복 댓글이면 발급하지 않습니다.
             </p>
             <div className="divider" />
             <div className="row between">
@@ -188,8 +188,8 @@ export function CouponPanel() {
               </Button>
             </div>
             <p className="note">
-              워커를 끄고 5초가 지난 뒤 다시 켜 보세요. 큐에 남은 건은 <strong>DEAD_LETTER(SLA_EXCEEDED)</strong>로
-              빠지고 늦은 쿠폰은 발송되지 않습니다.
+              워커를 끄고 5초가 지난 뒤 다시 켜 보세요. 큐에 남은 건은 <strong>SLA 초과</strong>로
+              실패 처리되고 늦은 쿠폰은 발송되지 않습니다.
             </p>
           </div>
         </Card>
@@ -355,7 +355,7 @@ export function CouponPanel() {
 
       <div className="grid two">
         <Card
-          title="폭주 시뮬레이션"
+          title="폭주 대응 테스트"
           hint="같은 엔진으로 1,000건을 실제로 처리합니다"
           actions={
             <Button
