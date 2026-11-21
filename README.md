@@ -19,7 +19,7 @@
 |------|------------------|
 | **분산 렌더 큐** | 작업 상태머신(대기/지연/활성/DLQ) 기반 렌더링 파이프라인. 워커 프로세스 장애 시 Lease 만료 감지 및 자동 복구 |
 | **워커 풀** | CPU 코어 수 기반 동시성 제어, 청크 단위 인코딩 진행률 추적 및 장애 복구 |
-| **레이트 리밋** | Meta Graph API(25건/일) 및 YouTube Data API(1,600 unit/업로드) 플랫폼별 일일 쿼터 사전 계산 및 초과 차단 |
+| **레이트 리밋** | Meta Graph API(25건/24시간) 및 YouTube Data API(1,600 unit/업로드) 플랫폼별 일일 쿼터 사전 계산 및 초과 차단 |
 | **멀티테넌트** | 테넌트별 토큰 버킷 쿼터 격리를 통해 특정 고객사의 대량 요청 시에도 타 고객사 작업 지연 방지 |
 | **OAuth 로테이션** | Single-Flight 패턴 적용으로 다중 동시 예약 작업 시 토큰 만료가 발생해도 갱신 API 중복 호출 1회로 병합 |
 | **훅 A/B** | 3안 훅 A/B 테스트 발행 후 웹훅 성과 데이터를 집계하여 최적 훅 가중치 자동 반영 |
@@ -797,7 +797,7 @@ flowchart LR
 | **큐 선점** | `ORDER BY priority DESC, available_at, id LIMIT 1 FOR UPDATE SKIP LOCKED` — 워커 10개가 같은 행에 줄 서지 않는다 |
 | **장애 복구** | lease 만료 = 죽은 워커의 작업. 회수해서 `delayed`(또는 `dlq`)로 되돌린다 |
 | **재시도 분류** | `retryable`이 상태를 정한다: 지수 백오프 재시도 / 즉시 실패 / DLQ |
-| **발행** | 컨테이너 → `status_code=FINISHED` 폴링 → `media_publish`. 준비 전 발행은 일일 25건 쿼터를 태운다 |
+| **발행** | 컨테이너 → `status_code=FINISHED` 폴링 → `media_publish`. 준비 전 발행은 24시간 25건 쿼터를 태운다 |
 | **토큰** | Facebook Login / Instagram Login 두 갱신 흐름 + single-flight lease(30개 예약 → 갱신 1회) |
 | **웹훅** | `MetaWebhookSignatureVerifier` — raw body HMAC-SHA256을 `hash_equals`로 비교(타이밍 공격 차단), SHA-1 헤더·형식 오류·시크릿 미설정은 각각 다른 사유로 fail-closed. `last_event_id`로 재전송 차단 |
 | **알림톡** | 검수된 템플릿 + 변수 치환 + dedupe 키. 알림 실패가 렌더·발행을 실패시키지 않는다 |
