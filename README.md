@@ -671,7 +671,11 @@ npm run coverage  # 89.7% statements · 81.9% branches
 | 댓글 워커 | `php bin/coupon-worker.php --once` | ✅ `sent=1` · 1회용 토큰 발급·큐 행 연결 · `dispatch_attempts` SENT(dry_run, message id) · 큐 `DISPATCHED` |
 | 쿠폰 수령 | `GET /c/{token}` 두 번 호출 | ✅ 1회 `GRANTED`(3,000원) → 2회 `ALREADY_CLAIMED`, DB `claim_count=1` |
 | 정적 웹 콘솔 | `npm run build:web` → 로컬 서버 | ✅ 탭 6개 렌더·클릭 동작, 콘솔 오류 0 |
-| 라이브 배포 | <https://shye-seo.github.io/sns-shortform-automation/> | ✅ HTTP 200 |
+| 라이브 배포 | <https://shye-seo.github.io/sns-shortform-automation/> | ✅ HTTP 200 · 번들 `build.json` 최신 빌드 일치 확인 |
+| 대본 개편 확인(라이브) | 주제 `퇴사한 30대 개발자의 일상` 입력 | ✅ 도메인 `일상·브이로그`(근거 일상+9) · 훅 3.14s · 글쓰기 템플릿 문장 0건 |
+| 편집 패키지(라이브) | 「편집 패키지」 클릭 → 내려받은 zip 검사 | ✅ 3파일 4.8KB · `unzip -t` 정상 · SRT/MD 타임시트 한글 파일명 유지 |
+| 발행 전 점검(라이브) | 주제를 `부작용 없는 다이어트 보장 크림`으로 바꿈 | ✅ 차단 1(`부작용 없음 단정`) · 주의 1(`결과 보장`) · 발행 버튼 disabled |
+| 팔로워 전용(라이브) | 팔로워만 ON + 10초 적용 후 팔로워/비팔로워 댓글 | ✅ 팔로워 1건 DM · 비팔로워 1건 지나감(`팔로워가 확인되지 않아…`) |
 
 ---
 
