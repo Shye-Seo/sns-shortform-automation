@@ -1,6 +1,6 @@
 <p align="center">
   <a href="https://github.com/Shye-Seo/sns-shortform-automation/actions/workflows/ci.yml"><img alt="CI Pipeline" src="https://github.com/Shye-Seo/sns-shortform-automation/actions/workflows/ci.yml/badge.svg" /></a>
-  <img alt="Tests" src="https://img.shields.io/badge/tests-751_(Vitest_566_%C2%B7_PHPUnit_185)-2E7D32?style=flat-square" />
+  <img alt="Tests" src="https://img.shields.io/badge/tests-795_(Vitest_610_%C2%B7_PHPUnit_185)-2E7D32?style=flat-square" />
   <img alt="Web demo" src="https://img.shields.io/badge/web_demo-live_(GitHub_Pages)-13315C?style=flat-square" />
 </p>
 
@@ -12,7 +12,7 @@
 그것을 **수십 개 테넌트 · 수백 편 · 플랫폼 쿼터 안에서** 안정적으로 운영하는 것은
 완전히 다른 문제입니다. 이 저장소는 대규모 배포 환경의 안정성과 확장성 문제를 풉니다.
 
-`TypeScript` · `Node.js 20` · `ffmpeg` · `Vitest 566 tests` · `커버리지 89.7%`
+`TypeScript` · `Node.js 20` · `ffmpeg` · `Vitest 610 tests` · `커버리지 90.3%`
 `PHP 8.2` · `MySQL 8.0` · `Meta Graph API` · `NCP SENS 알림톡` · `PHPUnit 185 tests`
 
 | 계층 | 무엇을 보장하나 |
@@ -27,7 +27,7 @@
 | **서버 계층(DB·API)** | MySQL 8.0 기반 작업 원장 보존 및 PHP 백엔드 워커의 `SKIP LOCKED` 기반 동시성 경합 없는 작업 선점 |
 
 ```bash
-npm ci && npm run verify      # 566 tests, 네트워크·ffmpeg 없이
+npm ci && npm run verify      # 610 tests, 네트워크·ffmpeg 없이
 npm run cli -- studio         # 터미널 데모 콘솔
 npm run dev:web               # 브라우저 콘솔 → http://127.0.0.1:4173
 ```
@@ -615,7 +615,7 @@ npm run cli -- crosschannel --topic "냉장고 재료로 10분 저녁" --llm --o
 ## 12. 검증
 
 ```bash
-npm run verify    # typecheck + typecheck:web + lint + 566 tests
+npm run verify    # typecheck + typecheck:web + lint + 610 tests
 npm run coverage  # 89.7% statements · 81.9% branches
 ```
 
@@ -641,12 +641,15 @@ npm run coverage  # 89.7% statements · 81.9% branches
 | 인터랙티브 쿠폰 엔진 (멱등·어뷰징·5초 데드라인·1회용 토큰·풀 경합·1,000건) | `interactiveCouponDispatcher.test.ts` | 39 |
 | 크로스채널 기획 (카테고리·앵글 변주·채널 구조·리퍼포징 순서) | `crossChannel.test.ts` | 22 |
 | 인터랙티브 콘솔 (React: 수령·퍼널 카드) | `interactiveConsole.test.tsx` | 2 |
-| **주제 도메인 대본 (형식>소재 분류·12도메인 4비트·주제어 반복 상한·훅 3.5초)** | `domainScript.test.ts` | **8** |
+| **주제 도메인 대본 (형식>소재 분류·19도메인 4비트·주제어 반복 상한·훅 3.5초)** | `domainScript.test.ts` | **8** |
+| **주제 지식 팩 (승혜 님 SNS 주제 10개 × 분류·팩·실제 정보·문장 누출 금지·팩 무결성·60/45/30초)** | `topicKnowledge.test.ts` | **19** |
+| **선택형 LLM 연결 (프롬프트 근거·OpenAI/Anthropic 요청·오류 메시지·키 보관)** | `aiScript.test.ts` | **11** |
+| **AI 연결 UI (jsdom: 패널·키 없이 내장 엔진·가짜 응답으로 대본 교체·키 삭제)** | `aiPanel.test.tsx` | **4** |
 | **30초 프리셋 전수 검수 (12도메인 × 3포맷·글자 상한·낱말 경계 절단·태그 출처)** | `osmu30.test.ts` | **16** |
 | **편집 패키지 (SRT 시간·CSV 인용·ZIP 중앙디렉터리/CRC·파일명 정리)** | `editPackage.test.ts` | **7** |
 | **발행 전 점검 (규제·금칙 표현·개인정보·9:16 안전영역·상한·정상 대본 오탐 0)** | `compliance.test.ts` | **7** |
 | **팔로워 전용·슬로우 큐 (확인 안 됨 차단·예산 미소모·간격/데드라인 이동)** | `couponAudience.test.ts` | **8** |
-| **합계** | 33개 파일 | **566** |
+| **합계** | 36개 파일 | **610** |
 
 네트워크·ffmpeg 없이 전부 통과합니다. 외부 API는 fake HTTP와 주입된 리프레셔로,
 재시도는 주입된 시계·sleep으로 검증합니다.
@@ -658,8 +661,8 @@ npm run coverage  # 89.7% statements · 81.9% branches
 
 | 검수 항목 | 실행 | 결과 |
 |-----------|------|------|
-| 타입·린트·단위 테스트 | `npm run verify` | ✅ 33개 파일 566건 통과 |
-| 커버리지 | `npm run coverage` | 89.70% statements · 81.92% branches |
+| 타입·린트·단위 테스트 | `npm run verify` | ✅ 36개 파일 610건 통과 |
+| 커버리지 | `npm run coverage` | 90.31% statements · 82.21% branches |
 | 실제 렌더 | `craft → review --approve → render --execute` (ffmpeg 7.0.2) | ✅ 1080×1920 · 33.13s · 1.2MB · 프리플라이트 12/13(경고 1) |
 | 큐·워커 | `queue run --jobs 11 --concurrency 3 --fail-every 7` | ✅ 시도 13 · 성공 10 · DLQ 1 · 최대 동시 워커 3 |
 | MySQL 스키마 | `php bin/migrate.php --fresh --seed --verify` | ✅ 13개 테이블 · 인덱스·FK 확인 |
@@ -676,6 +679,11 @@ npm run coverage  # 89.7% statements · 81.9% branches
 | 편집 패키지(라이브) | 「편집 패키지」 클릭 → 내려받은 zip 검사 | ✅ 3파일 4.8KB · `unzip -t` 정상 · SRT/MD 타임시트 한글 파일명 유지 |
 | 발행 전 점검(라이브) | 주제를 `부작용 없는 다이어트 보장 크림`으로 바꿈 | ✅ 차단 1(`부작용 없음 단정`) · 주의 1(`결과 보장`) · 발행 버튼 disabled |
 | 팔로워 전용(라이브) | 팔로워만 ON + 10초 적용 후 팔로워/비팔로워 댓글 | ✅ 팔로워 1건 DM · 비팔로워 1건 지나감(`팔로워가 확인되지 않아…`) |
+| 도메인·지식 팩 개편 (2026-11-22) | 주제 `전세사기 주의할점` 입력 | ✅ 도메인 `집·부동산` · 팩 `전세사기 예방` · 해결 4단계가 등기부등본·확정일자·완납증명·HUG · 훅 3.0s |
+| 형식어 제거 | `전세사기주의할점`(붙여쓰기), `빈티지 디카 입문 추천` | ✅ 이름 `전세사기` / `빈티지 디카` · 일상 문장 0건 |
+| 선택형 LLM (단위) | `tests/aiScript.test.ts` (가짜 fetch) | ✅ OpenAI·Anthropic 요청 형식·401 메시지·키 저장/삭제 |
+| 선택형 LLM (DOM) | `tests/aiPanel.test.tsx` | ✅ 키 없이 내장 엔진 → 키 입력·생성 → `생성 OpenAI gpt-4o-mini` 표시 |
+| MySQL·PHP (2026-11-22) | `php bin/migrate.php --fresh --seed --verify` + `SHORTFORM_INTEGRATION=1 phpunit` | ✅ 13개 테이블 · 185건 619 assertions · 오류 0 |
 
 ---
 
@@ -772,7 +780,7 @@ platform built on a working 60-second shortform pipeline.
   (`.csv`/`.txt`) inside a store-only ZIP written in the browser (CRC-32, UTF-8 names).
 - **Pre-publish scan** — regulated/absolute claims, personal data and 9:16 safe-area overflow
   (caption width, platform-UI collisions) block the publish button before upload.
-- **Verification** — 566 Vitest cases, 89.7% statement coverage, no network and no ffmpeg
+- **Verification** — 610 Vitest cases, 90.3% statement coverage, no network and no ffmpeg
   required (injected clock, RNG, sleep, HTTP and token refresher); 185 PHPUnit cases over
   MySQL 8.0 with 0 skips.
 
@@ -1050,7 +1058,7 @@ DM이 몰리면 스팸 신호로 읽고, 모르는 사람에게 먼저 보낸 DM
 
 | 탭 | 확인하는 것 | 실행되는 코드 |
 |----|------------|---------------|
-| **9:16 스튜디오** | 주제를 바꾸면 대본·타임라인·자막이 즉시 다시 계산. '대본 다시 생성'은 앵글과 문장을 함께 교체. 안전영역 가이드, 재생 위치에 맞춘 단어별 자막 강조, 발화 시 BGM 15% 감쇠 곡선 | `topicProfile`(분류), `topicDraftWriter`(주제·앵글별 대본), `scriptEngine`(`planTimeBudget`·`fitDrafts`·`buildTimeline`), `tts.estimateAlignmentFor`, `audioEngine`(`computeDuckingEnvelope`·`buildCues`), `videoCompositor`(`planOverlayLayout`·`checkLayoutCollisions`) |
+| **9:16 스튜디오** | 주제를 바꾸면 대본·타임라인·자막이 즉시 다시 계산. 19개 도메인 + 22개 실전 지식 팩이 주제에 맞는 대본을 쓰고('전세사기' → 등기부등본·확정일자·HUG), 키를 넣으면 OpenAI·Anthropic이 대신 쓴다. '대본 다시 생성'은 앵글과 문장을 함께 교체. 안전영역 가이드, 재생 위치에 맞춘 단어별 자막 강조, 발화 시 BGM 15% 감쇠 곡선 | `scriptDomains`(19개 도메인 분류), `topicKnowledge`(22개 지식 팩), `topicDraftWriter`·`domainScriptWriter`(앵글·변주별 4비트), `aiScriptPrompt`·`web/model/aiScript`(선택형 LLM), `scriptEngine`(`planTimeBudget`·`fitDrafts`·`buildTimeline`), `tts.estimateAlignmentFor`, `audioEngine`(`computeDuckingEnvelope`·`buildCues`), `videoCompositor`(`planOverlayLayout`·`checkLayoutCollisions`) |
 | **크로스채널 기획** | 주제 하나로 릴스/쇼츠 대본 + 유튜브 롱폼 목차 + 네이버·티스토리·워드프레스 글 뼈대를 같은 단계 순서로 생성. 레퍼런스 글을 붙이면 훅 유형·단계 수·저장 유도를 읽어 앵글과 목차에 반영하고, 숏폼→챕터→H2 리퍼포징 맵을 표로 보여줌 | `topicProfile`, `patternLibrary`(6개 채널 구조), `contentAnalyzer`, `crossChannelPlanner`, `planMarkdown` |
 | **댓글 → DM 쿠폰** | ① 게시물(릴스·피드) 선택 → ② 키워드·보상·수량·유효시간 규칙 적용 → ③ 웹훅 연결 3단계 안내(콜백 주소·구독 항목·서버 처리 순서) → ④ 받은 댓글·보낸 DM·퍼널. 다른 게시물의 댓글은 같은 계정이라도 반응하지 않고, 연결 전에는 같은 엔진에 시험 댓글을 넣어 확인 | `core/interactiveCouponDispatcher` 전체(서명 검증·멱등·어뷰징·5초 데드라인·1회용 토큰·퍼널), `web/model/coupon.ts`(게시물별 캠페인) |
 | **발행 캘린더 · 쿼터** | 지터가 들어간 예약 타임라인, 인스타그램 25건/24시간·유튜브 10,000할당량 게이지, 한도 소진 시 발행 중단, 실패 작업 재시도/정리와 운영자 기록 | `rateLimit/jitter.planPublishSlots`, `rateLimit/tenantRegistry`(이동 창·캘린더 데이 리셋), `queue/jobQueue`, `studio/dlqActions`, `web/model/labels`(사유 번역) |
@@ -1206,7 +1214,8 @@ npm run cli -- quota plan --provider youtube --jobs 8 --slot-start 08:00 --slot-
 | 층 | 모듈 | 정하는 것 | 쓰이는 곳 |
 |----|------|-----------|-----------|
 | 주제 분류 | `topicProfile` | 무엇에 대한 영상인가(여행·제품·정보·요리·수납·뷰티·돈·건강·커리어·일상)와 레버(이동 동선·소음·무게·자격 조건·재료 순서) | 블로그·롱폼 구조, 배지 |
-| 대본 도메인 | `scriptDomains` | 어떤 말로 말하는가 — 12개 도메인(일상·커리어·제품·뷰티·살림·레시피·여행·카페·재테크·콘텐츠·정보·운동) | 4비트 대본, 태그, 캡션 |
+| 대본 도메인 | `scriptDomains` | 어떤 말로 말하는가 — 19개 도메인(집·부동산, 정책·지원금, 재테크, 웨딩, 여행, 디카, 운동·다이어트, 외국어, 테크·AI, 데스크테리어, 다이어리, 뷰티·패션, 일상 + 커리어·제품·살림·요리·카페·콘텐츠) | 4비트 대본, 태그, 캡션 |
+| 실전 지식 | `topicKnowledge` | 이 주제에서 실제로 확인해야 하는 것 — 22개 지식 팩(전세사기, 청년 월세 지원금, 빈티지 디카, 데스크 조명, 스드메, 챗GPT, 다꾸…). 단계 문장이 등기부등본·확정일자·HUG처럼 구체적으로 바뀐다 | 4비트 대본의 문제·해결 단계, 태그 |
 
 `scriptDomains`의 분류는 **가중치 합 + 장르 어미**입니다. `…의 일상`, `… 브이로그`처럼 끝이 형식을
 말하면 9점이라, 소재 단어(퇴사 +3, 개발 +3)를 합쳐도 뒤집히지 않습니다. 동점이면 더 좁은 도메인이
@@ -1215,11 +1224,19 @@ npm run cli -- quota plan --provider youtube --jobs 8 --slot-start 08:00 --slot-
 
 ```
 퇴사한 30대 개발자의 일상        → 일상·브이로그 (이름: 개발자의 일상, 사람: 퇴사한 30대 개발자)
-퇴사 후 첫 달 정리             → 퇴사·커리어·개발 (이름: 퇴사 후 첫 달)
+전세사기 주의할점              → 집·부동산 (이름: 전세사기, 팩: 전세사기 예방)
+청년 월세 지원금 신청법         → 정책·지원금 (이름: 청년 월세 지원금, 팩: 청년 월세 지원금)
+빈티지 디카 입문 추천           → 디카·사진 (이름: 빈티지 디카, 팩: 빈티지 디카 입문)
+데스크테리어 조명 추천          → 데스크테리어 (이름: 데스크 조명, 팩: 데스크 조명)
+스드메 예산 짜는 법            → 웨딩·결혼준비 (이름: 스드메, 팩: 스드메 견적)
+다꾸 입문                    → 다이어리·기록 (이름: 다꾸, 팩: 다꾸 입문)
 부산 전포 카페 리스트           → 카페·맛집 (이름: 전포 카페, 장소: 전포)
 겨울 제주 여행 2박3일 코스       → 여행 (이름: 제주 2박3일)
-인스타 릴스 대본 쓰는 법        → 콘텐츠·글쓰기 (이름: 인스타 릴스 대본)
 ```
+
+주제 끝의 형식어(`주의할점·입문·추천·신청법·공부법·짜는 법`)는 이름에서 뗍니다. 붙여 쓴
+`전세사기주의할점`도 같은 규칙으로 `전세사기`가 되고, `…일상`·`…브이로그`로 끝나면 지식 팩
+점수를 낮춰 **영상의 형식**이 이깁니다(`빈티지 디카 들고 다니는 일상 브이로그` → 일상).
 
 ### 20.2 도메인별 4비트 + 앵글 × 변주 (`domainScriptWriter`)
 
@@ -1245,21 +1262,23 @@ npm run cli -- quota plan --provider youtube --jobs 8 --slot-start 08:00 --slot-
   함께 밀립니다. 연속 6번을 눌러도 훅·문제·단계·CTA·캡션이 모두 다릅니다(테스트로 고정).
 - 단계 문장은 도메인 은행에서 **연속 구간**으로 뽑기 때문에 순서가 깨지지 않습니다.
 
-실제 출력(45초, 변주 0):
+실제 출력(45초, 변주 0). 2026-11-22 이전에는 이 주제가 일상으로 분류되어
+`"주의할점, 한 달이면 달라집니다 / 일어나는 시간만 먼저 고정합니다"`가 나왔습니다.
 
 ```
-[훅]       개발자의 일상, 계획부터 세우지 마세요
-[문제]     개발자의 일상을 남기려고 카메라를 켜면 정작 하루는 더 흐트러집니다.
-[해결 1]   일어나는 시간만 먼저 고정합니다. 나머지 순서는 그날 정해도 하루가 무너지지 않습니다.
-[해결 2]   하루에 하나만 정해두고, 끝나면 바로 다음 걸 적습니다. 목록이 길면 시작을 못 합니다.
-[해결 3]   카메라를 켜두고 그대로 남깁니다. 편집은 10분 안에 끝내야 다음 날도 켭니다.
-[해결 4]   저녁에 세 줄만 적습니다. 무엇을 했고, 어디서 막혔고, 내일 뭘 할지입니다.
-[마지막]   다음 기록도 같은 순서로 올립니다. 저장해두세요.
+[훅]       전세사기, 서명하고 나면 늦습니다
+[문제]     전세사기는 마음이 급할 때 서류를 건너뛰게 됩니다.
+[해결 1]   계약 당일 등기부등본을 다시 뗍니다. 갑구 소유자와 을구 근저당·가압류를 확인합니다.
+[해결 2]   잔금 당일 전입신고와 확정일자를 같은 날 처리합니다. 하루만 늦어도 순위가 밀립니다.
+[해결 3]   국세·지방세 완납증명을 받아 임대인 체납을 확인합니다. 발급일이 계약일과 가까워야 합니다.
+[해결 4]   HUG 전세보증보험 가입 가능 여부를 계약서 특약에 넣습니다. 안 되면 계약을 다시 봅니다.
+[마지막]   계약 전에 다시 볼 순서라서 저장해두세요.
+태그       #전세사기 #등기부등본 #확정일자 #HUG #전세보증보험 #부동산 #숏폼
 ```
 
-**한계**: 도메인 은행은 12개 주제군에 대한 **휴리스틱 문장 풀**입니다. 어떤 주제든 그럴듯한 4비트를
-만들지만, 실제 그 사람의 하루를 관찰한 문장은 아닙니다. 문장을 고치는 일은 사람이 하고, 엔진은
-"어떤 말투로 말할지"와 "길이·중복"을 지킵니다. 영어 주제도 한국어 은행으로 쓰입니다(영어 은행 없음).
+**한계**: 지식 팩은 22개 주제에 붙은 **검수된 체크리스트**이고, 그 밖의 주제는 도메인 은행의
+휴리스틱 문장으로 내려갑니다. 숫자·기한·금액은 제도가 바뀌면 틀린 정보가 되므로 단정하지 않고
+"이번 차수 공고에서 확인"으로 남깁니다. 영어 주제도 한국어 은행으로 쓰입니다(영어 은행 없음).
 
 ### 20.3 채널 구조 (`patternLibrary`)와 분석 (`contentAnalyzer`)
 
@@ -1417,6 +1436,79 @@ A/B 카드는 "이미 노출을 쓴 뒤"의 질문에 답한다. 이 표는 그 
 | 훅 자막이 `…세우지` + `마세요`로 갈라져 한 낱말 카드가 생김 | 2줄 상한 때문에 앞 카드에 접을 수 없음 | 앞 카드에서 낱말을 옮겨 두 카드 모두 두 낱말 이상이 되게 재분배(`buildCues` pass 4) |
 
 `tests/osmu30.test.ts`가 12개 도메인 × 3포맷을 한 번에 돌려 위 항목을 모두 다시 검사합니다.
+
+## 23. 주제 지식 엔진과 선택형 LLM 연결 (2026-11-22)
+
+피드백: *"주제에 '전세사기 주의할점'을 넣으면 일상으로 인식해서 대본이 엉망이 된다. 내 SNS 계정들
+(일상·웨딩·여행·디카·운동·집·정책-지원금·외국어·테크·데스크테리어·다이어리·기록) 주제에 따라
+연관된 내용을 대본으로 추천해줘."*
+
+원인은 두 가지였습니다. **'전세' 계열 단어가 분류기에 아예 없었고**, 주제 이름은 마지막 토큰을
+그대로 써서 `전세사기 주의할점`의 이름이 `주의할점`이 됐습니다. 그래서 훅이
+`"주의할점, 한 달이면 달라집니다"`가 되고, 해결 단계는 일상 은행의 `"일어나는 시간만 먼저
+고정합니다"`가 나왔습니다. 단어를 몇 개 더 넣는 것으로는 부족해서 세 층으로 나눴습니다.
+
+| 층 | 파일 | 역할 |
+|----|------|------|
+| 도메인 | `scriptDomains.ts` | 19개 주제군의 말투·태그. 가중치 합 + 장르 어미 + 지식 팩 점수로 분류 |
+| 지식 팩 | `topicKnowledge.ts` | 22개 주제의 **실제 확인 항목**(등기부등본 을구, 확정일자, HUG 특약, 무주택·별도거주, 배터리 규격, 4000K 간접등…) |
+| LLM(선택) | `aiScriptPrompt.ts` · `web/model/aiScript.ts` | 사용자의 API 키로 OpenAI·Anthropic에 같은 4비트 계약을 요청 |
+
+### 23.1 분류를 세 겹으로
+
+1. **도메인 단서**: 단어마다 무게가 다릅니다. `전세사기`는 home에 8점, `월세`는 home에 4점이지만
+   `청년 월세 지원금`은 info 팩에 8점입니다.
+2. **지식 팩 점수**: 팩이 걸리면 그 도메인에 6~12점을 더합니다. 한 단어로 주제가 정해지는 경우
+   (`전세사기`, `다꾸`, `스드메`) 일반 단서만으로는 일상으로 떨어지기 때문입니다.
+3. **장르 어미**: `…일상`·`…브이로그`로 끝나면 팩 점수를 40%로 줄입니다. 형식이 소재를 이깁니다.
+
+### 23.2 지식 팩이 문장을 바꾸는 방식
+
+팩은 문제·해결 단계·화면 자막·태그·근거(`basis`)를 함께 갖습니다. 팩이 없으면 도메인 은행을 쓰고,
+있으면 **팩의 단계를 우선**합니다. 그래서 같은 `집·부동산` 도메인이라도 주제에 따라 말이 달라집니다.
+
+| 주제 | 도메인 | 팩 | 해결 단계(실제 출력) |
+|------|--------|----|----------------------|
+| 전세사기 주의할점 | 집·부동산 | 전세사기 예방 | 등기부등본 갱·을구 → 전입신고+확정일자 → 완납증명 → HUG 특약 → 본인 계좌 |
+| 청년 월세 지원금 신청법 | 정책·지원금 | 청년 월세 지원금 | 나이·무주택 → 별도 거주 → 계약서·이체 내역 → 올해 소득 기준 → 한도·기간 공고 확인 |
+| 빈티지 디카 입문 추천 | 디카·사진 | 빈티지 디카 입문 | 배터리·충전기·메모리 규격 → 화밸 고정 → 노출 -0.3 → 촬영에서 색 잡기 |
+| 데스크테리어 조명 추천 | 데스크테리어 | 데스크 조명 | 모니터 뒤 간접등 → 4000K 하나 → 화면과 같은 밝기 → 반대편 스탠드 |
+| 스드메 예산 짜는 법 | 웨딩·결혼준비 | 스드메 견적 | 견적 세 곳 같은 조건 → 날짜 고정 → 드레스 두 곳 → 추가 인원·출장비 |
+| 영어 회화 공부법 | 외국어공부 | 회화 공부법 | 문장 세 개 → 열 번 읽기 → 문장으로 단어 → 녹음 → 사람에게 써먹기 |
+
+숫자·기한·금액은 제도가 바뀌면 틀린 정보가 됩니다. 그래서 팩은 그런 값을 단정하지 않고
+"이번 차수 공고에서 확인"으로 남기고, 근거를 `basis`에 적어 콘솔에서 확인할 수 있게 했습니다.
+
+### 23.3 선택형 LLM(BYOK) — 키는 브라우저에만
+
+정적 데모에는 서버가 없습니다. 그래서 9:16 스튜디오 위쪽에 **AI 모델 직접 연결(선택)** 카드를 두고:
+
+- 제공자(OpenAI / Anthropic)와 모델을 고르고 API 키를 넣으면, 키는 `localStorage`
+  (`shortform.ai.v1`)에만 저장되고 **어떤 요청도 우리 쪽으로 보내지 않습니다.**
+- 호출은 브라우저에서 `api.openai.com/v1/chat/completions` 또는 `api.anthropic.com/v1/messages`로
+  바로 나갑니다(Anthropic은 `anthropic-dangerous-direct-browser-access` 헤더 필요).
+- 프롬프트에는 주제·도메인·앵글·발화 예산과 함께 **그 주제의 지식 팩 단계**가 사실 근거로 들어갑니다.
+  그러지 않으면 모델이 `"기준을 하나로 줄이세요"` 같은 범용 문장을 돌려줍니다.
+- 돌아온 JSON은 내장 엔진과 같은 스키마(`SceneDraft`)로 파싱되어 같은 타임라인·자막·편집 패키지를
+  통과합니다. 훅 3.5초 상한과 발화 예산도 그대로 적용됩니다.
+- 키가 없으면 이 카드는 아무 일도 하지 않고, 내장 도메인 엔진이 대본을 만듭니다. 화면의
+  `생성` 표시가 지금 대본이 누구 것인지 알려줍니다(내장 엔진 / OpenAI gpt-4o-mini …).
+
+```
+[훅]       전세사기, 서명하고 나면 늦습니다
+[문제]     전세사기는 마음이 급할 때 서류를 건너뛰게 됩니다.
+[해결 1~4] 등기부등본 → 전입신고+확정일자 → 완납증명 → HUG 특약
+[마지막]   계약 전에 다시 볼 순서라서 저장해두세요.
+```
+
+### 23.4 검증
+
+- `tests/topicKnowledge.test.ts` — 승혜 님 주제 10개 × (분류·팩·실제 정보 포함·다른 도메인 문장
+  누출 금지), 형식어 제거, 장르 어미 우선, 19개 도메인·22개 팩 무결성, 30/45/60초 훅 상한.
+- `tests/aiScript.test.ts` — 프롬프트에 지식 팩 근거가 들어가는지, OpenAI/Anthropic 요청 형식,
+  401·형식 오류 메시지, 키 저장/삭제/깨진 값 처리.
+- `tests/aiPanel.test.tsx` — 실제 DOM에서 키 없이 내장 엔진 → 키 입력·생성 → 가짜 응답이 대본으로
+  들어오고 `생성 OpenAI gpt-4o-mini로 생성`이 표시되는지, 키 삭제 후 내장 엔진으로 돌아오는지.
 
 ## 작성자
 
