@@ -1,6 +1,6 @@
 import type { CSSProperties, ReactNode } from 'react';
 
-/** Presentation primitives shared by the four panels. No business logic here. */
+/** Presentation primitives shared by the panels. No business logic here. */
 
 export function Card({
   title,
@@ -19,19 +19,20 @@ export function Card({
   tight?: boolean;
   style?: CSSProperties;
 }) {
+  const hasHead = Boolean(title || hint || eyebrow || actions);
   return (
     <section className={tight ? 'card tight' : 'card'} style={style}>
-      {(title || actions) && (
-        <header>
-          <div>
+      {hasHead ? (
+        <header className="card-head">
+          <div className="card-head-text">
             {eyebrow ? <p className="eyebrow">{eyebrow}</p> : null}
             {title ? <h2>{title}</h2> : null}
-            {hint ? <p className="hint" style={{ margin: '3px 0 0' }}>{hint}</p> : null}
+            {hint ? <p className="hint">{hint}</p> : null}
           </div>
-          {actions ? <div className="row">{actions}</div> : null}
+          {actions ? <div className="card-actions">{actions}</div> : null}
         </header>
-      )}
-      {children}
+      ) : null}
+      <div className="card-body">{children}</div>
     </section>
   );
 }
@@ -48,7 +49,7 @@ export function Kpi({
   tone?: 'ok' | 'warn' | 'bad';
 }) {
   return (
-    <div className="kpi">
+    <div className="kpi-card">
       <div className="label">{label}</div>
       <div className={tone ? `value ${tone}` : 'value'}>{value}</div>
       {sub ? <div className="sub">{sub}</div> : null}
@@ -94,6 +95,21 @@ export function Pill({
     <span className={tone ? `pill ${tone}` : 'pill'} title={title}>
       {children}
     </span>
+  );
+}
+
+/** 흩어진 배지 대신 쓰는 한 줄 메타. 항목 사이에 가운뎃점을 둔다. */
+export function MetaLine({ items }: { items: Array<ReactNode | null | undefined> }) {
+  const visible = items.filter((item) => item !== null && item !== undefined && item !== '');
+  return (
+    <div className="meta-line">
+      {visible.map((item, index) => (
+        <span key={index} className="meta-item">
+          {index > 0 ? <span className="sep" aria-hidden="true" /> : null}
+          {item}
+        </span>
+      ))}
+    </div>
   );
 }
 

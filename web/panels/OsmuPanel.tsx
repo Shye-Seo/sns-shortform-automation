@@ -8,7 +8,7 @@ import {
   type OsmuFormatId,
   type OsmuSummaryTarget,
 } from '../../src/services/osmuConverter';
-import { Button, Card, Kpi, Pill, num } from '../ui';
+import { Button, Card, Kpi, num } from '../ui';
 
 /**
  * OSMU conversion console.
@@ -59,19 +59,13 @@ const CHECK_KO: Record<string, string> = { CTA: '마지막 유도' };
 
 function FormatChecks({ format }: { format: OsmuFormat }) {
   return (
-    <div className="row" style={{ gap: 6 }}>
+    <div className="check">
       {format.checks.map((check) => (
-        <span
-          key={check.id}
-          className="pill"
-          style={
-            check.ok
-              ? { borderColor: 'var(--ok)', color: 'var(--ok)' }
-              : { borderColor: 'var(--bad)', color: 'var(--bad)' }
-          }
-          title={check.label}
-        >
-          {check.ok ? '✓' : '!'} {CHECK_KO[check.label.split(' ')[0] ?? ''] ?? check.label.split(' ')[0]} {check.detail}
+        <span key={check.id} className={check.ok ? 'ok' : 'bad'} title={check.label}>
+          <span className="mark" aria-hidden="true">
+            {check.ok ? '✓' : '!'}
+          </span>
+          {CHECK_KO[check.label.split(' ')[0] ?? ''] ?? check.label.split(' ')[0]} {check.detail}
         </span>
       ))}
     </div>
@@ -143,14 +137,12 @@ export function OsmuPanel({ topic, drafts, durationSec, language = 'ko', onBackT
           </>
         }
       >
-        <div className="stack" style={{ gap: 10 }}>
+        <div className="stack" style={{ gap: 0 }}>
           {conversion.beats.map((beat) => (
-            <div key={`${beat.index}-${beat.beat}`} className="row" style={{ gap: 10, alignItems: 'flex-start' }}>
-              <span className="mono small muted" style={{ width: 44, flexShrink: 0 }}>
-                {timecode(beat.startSec)}
-              </span>
-              <Pill tone="ghost">{beat.label}</Pill>
-              <span style={{ fontSize: 13, lineHeight: 1.55, flex: 1, minWidth: 0 }}>{beat.narration}</span>
+            <div key={`${beat.index}-${beat.beat}`} className="beat-line">
+              <span className="time mono">{timecode(beat.startSec)}</span>
+              <span className="beat-tag">{beat.label}</span>
+              <span className="narration">{beat.narration}</span>
             </div>
           ))}
         </div>
@@ -172,7 +164,7 @@ export function OsmuPanel({ topic, drafts, durationSec, language = 'ko', onBackT
           </Button>
         }
       >
-        <div className="row" role="tablist" aria-label="변환 포맷" style={{ gap: 6, marginBottom: 12 }}>
+        <div className="tab-row" role="tablist" aria-label="변환 포맷">
           {conversion.formats.map((format) => (
             <button
               key={format.id}
@@ -208,17 +200,19 @@ export function OsmuPanel({ topic, drafts, durationSec, language = 'ko', onBackT
           </div>
         ) : null}
 
-        <div className="stack" style={{ gap: 10 }}>
+        <div className="stack" style={{ gap: 14 }}>
           <pre
             data-testid="osmu-text"
             style={{
               margin: 0,
-              padding: 14,
-              borderRadius: 10,
-              background: 'var(--surface-2, #f7f9fb)',
+              padding: 18,
+              borderRadius: 12,
+              background: 'var(--surface-2)',
               border: '1px solid var(--line)',
-              fontSize: 13,
-              lineHeight: 1.65,
+              fontFamily: 'var(--font)',
+              fontSize: 14.5,
+              lineHeight: 1.75,
+              color: 'var(--ink-2)',
               whiteSpace: 'pre-wrap',
               wordBreak: 'break-word',
               minHeight: 180,
@@ -227,7 +221,7 @@ export function OsmuPanel({ topic, drafts, durationSec, language = 'ko', onBackT
             {activeFormat.text}
           </pre>
 
-          <div className="row between" style={{ gap: 10 }}>
+          <div className="row between" style={{ gap: 12 }}>
             <FormatChecks format={activeFormat} />
             <span className="small muted mono">
               {num(activeFormat.chars)} / {activeFormat.limitLabel}
@@ -240,12 +234,9 @@ export function OsmuPanel({ topic, drafts, durationSec, language = 'ko', onBackT
                 <h3 style={{ margin: 0 }}>스레드 분할 ({activeFormat.threads.length}개)</h3>
                 <span className="small muted">글당 {OSMU_LIMITS.threadsPost}자 이내</span>
               </div>
-              <div className="stack" style={{ gap: 8, marginTop: 8 }}>
+              <div className="stack" style={{ gap: 10, marginTop: 10 }}>
                 {activeFormat.threads.map((chunk, index) => (
-                  <div
-                    key={index}
-                    style={{ border: '1px solid var(--line)', borderRadius: 10, padding: 10 }}
-                  >
+                  <div key={index} className="scene-card">
                     <div className="row between" style={{ marginBottom: 6 }}>
                       <span className="small muted mono">
                         {index + 1}/{activeFormat.threads!.length} · {chunk.length}자
@@ -261,7 +252,7 @@ export function OsmuPanel({ topic, drafts, durationSec, language = 'ko', onBackT
                         {copied === `thread-${index}` ? '복사됨' : '복사'}
                       </Button>
                     </div>
-                    <p style={{ margin: 0, fontSize: 12.5, lineHeight: 1.6, whiteSpace: 'pre-wrap' }}>{chunk}</p>
+                    <p style={{ margin: 0, fontSize: 14.5, lineHeight: 1.75, whiteSpace: 'pre-wrap' }}>{chunk}</p>
                   </div>
                 ))}
               </div>

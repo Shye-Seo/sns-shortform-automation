@@ -93,9 +93,10 @@ export function HookPanel({ topic, onAdopt }: HookPanelProps) {
       >
         <div className="grid two" style={{ gap: 14 }}>
           <div>
-            <div className="row" style={{ gap: 6, marginBottom: 8 }}>
-              <Pill tone="ghost">인스타그램 통계 · 미연결</Pill>
-              <Pill tone="ghost">유튜브 통계 · 미연결</Pill>
+            <div className="meta-line" style={{ marginBottom: 12 }}>
+              <span>인스타그램 통계 <strong>미연결</strong></span>
+              <span className="sep" aria-hidden="true" />
+              <span>유튜브 통계 <strong>미연결</strong></span>
             </div>
             <p className="small muted" style={{ margin: 0 }}>
               연결하면 위 주기로 조회수·끝까지 본 비율·댓글이 자동으로 쌓입니다. 지금은 아래에서 기간을 골라
@@ -142,13 +143,13 @@ export function HookPanel({ topic, onAdopt }: HookPanelProps) {
                 >
                   <div className="row between" style={{ marginBottom: 4 }}>
                     <div className="row" style={{ gap: 7 }}>
-                      <strong style={{ fontSize: 13 }}>{arm.id}안</strong>
+                      <strong>{arm.id}안</strong>
                       <Pill tone="ghost">{ANGLE_LABEL[arm.angle ?? ''] ?? arm.angle ?? '-'}</Pill>
                       <span className="small muted">훅 {arm.hookSeconds.toFixed(2)}초</span>
                     </div>
                     <span className="small muted">{num(arm.impressions)}명에게 노출</span>
                   </div>
-                  <p style={{ margin: '0 0 8px', fontSize: 13.5, lineHeight: 1.5 }}>{arm.text}</p>
+                  <p style={{ margin: '0 0 10px', fontSize: 15, lineHeight: 1.6, color: 'var(--ink)' }}>{arm.text}</p>
                   <div className="row" style={{ gap: 14 }}>
                     <span className="small muted">
                       3초 유지{' '}
@@ -245,7 +246,7 @@ export function HookPanel({ topic, onAdopt }: HookPanelProps) {
               {result.rows.map((row) => (
                 <tr key={row.key}>
                   <td>
-                    <strong style={{ fontSize: 12.5 }}>{METRIC_LABEL[row.key]}</strong>
+                    <strong>{METRIC_LABEL[row.key]}</strong>
                     <div className="small muted">{row.hint}</div>
                   </td>
                   <td className="num">{row.a.trials === 0 ? '—' : pct(row.a.rate * 100, 1)}</td>

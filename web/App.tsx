@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import type { SceneDraft } from '../src/services/scriptEngine';
 import type { AngleChoice } from '../src/types/plan';
-import { Pill } from './ui';
 import { StudioPanel } from './panels/StudioPanel';
 import { CouponPanel } from './panels/CouponPanel';
 import { PublishingPanel } from './panels/PublishingPanel';
@@ -68,19 +67,41 @@ export function App() {
   return (
     <div className="app">
       <header className="masthead">
-        <div>
-          <p className="eyebrow">Shortform Studio</p>
+        <div className="masthead-main">
+          <p className="eyebrow">숏폼 운영 콘솔</p>
           <h1>숏폼 스튜디오</h1>
-          <p>
-            주제를 넣으면 대본·자막·장면 시간이 한 번에 잡히고, 같은 대본을 릴스·쇼츠·블로그용으로 바꿔 줍니다.
-            올린 뒤에는 댓글 쿠폰, 예약 발행 한도, 어떤 첫 문장이 잘 먹혔는지까지 이 화면에서 확인합니다.
+          <p className="lede">
+            주제 하나로 대본·자막·9:16 미리보기까지 만들고, 올린 뒤에는 댓글 쿠폰과 예약 발행 한도,
+            어떤 첫 문장이 잘 먹혔는지까지 이 화면에서 확인합니다.
           </p>
         </div>
-        <div className="meta">
-          <Pill tone="ok">주제를 바꾸면 대본과 자막이 다시 계산됩니다</Pill>
-          <Pill tone="ghost">9:16 · 4장면 기준</Pill>
+        <div className="masthead-side">
+          <span className="status">
+            <span className="dot" aria-hidden="true" />
+            주제를 바꾸면 대본과 자막이 다시 계산됩니다
+          </span>
+          <span className="status-sub">9:16 · 4장면 기준</span>
         </div>
       </header>
+
+      <div className="flow">
+        <span className="flow-step">
+          <span className="flow-no">1</span>주제 입력
+        </span>
+        <span className="flow-arrow" aria-hidden="true">
+          →
+        </span>
+        <span className="flow-step">
+          <span className="flow-no">2</span>대본 · 9:16 미리보기
+        </span>
+        <span className="flow-arrow" aria-hidden="true">
+          →
+        </span>
+        <span className="flow-step">
+          <span className="flow-no">3</span>발행 · 규칙 확인
+        </span>
+        <span className="flow-note">탭을 바꿔도 같은 주제로 이어집니다</span>
+      </div>
 
       <nav className="tabs" role="tablist" aria-label="콘솔 영역">
         {TABS.map((item) => (
@@ -137,8 +158,8 @@ export function App() {
 
       <footer className="foot">
         <span>
-          화면의 판정(한도·실패·재시도)은 엔진이 실제로 계산한 결과입니다. 외부 플랫폼 연결 전에는 예시 데이터로 같은
-          계산을 보여 줍니다.
+          화면의 판정(한도·실패·재시도)은 엔진이 실제로 계산한 결과입니다. 외부 플랫폼 연결 전에는 예시 데이터로
+          같은 계산을 보여 줍니다.
         </span>
         <span className="mono">
           <a href="https://github.com/Shye-Seo/sns-shortform-automation" rel="noreferrer noopener">

@@ -273,7 +273,7 @@ export function CouponPanel() {
                 </span>
               </div>
               <div className="field" style={{ minWidth: 200 }}>
-                <span>발송 간격(슬로우 큐)</span>
+                <span>발송 간격</span>
                 <div className="row" style={{ gap: 4 }}>
                   {SEND_INTERVAL_PRESETS.map((seconds) => (
                     <Button
@@ -360,42 +360,45 @@ export function CouponPanel() {
           </div>
         </div>
         <div className="divider" />
-        <table className="data">
-          <thead>
-            <tr>
-              <th>서버에 있는 것</th>
-              <th>하는 일</th>
-              <th>상태</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr>
-              <td className="mono">POST {CALLBACK_PATH}</td>
-              <td>서명 확인 → 댓글 파싱 → 키워드 매칭 → 중복 방지 → 5초 데드라인으로 대기열 적재</td>
-              <td><Pill tone="ok">연결됨</Pill></td>
-            </tr>
-            <tr>
-              <td className="mono">bin/coupon-worker.php</td>
-              <td>대기열 선점 → 1회용 토큰 발급 → DM/알림톡 발송 → 발송 이력 기록 → 재시도·DLQ</td>
-              <td><Pill tone="ok">연결됨</Pill></td>
-            </tr>
-            <tr>
-              <td className="mono">GET /c/&#123;token&#125;</td>
-              <td>쿠폰 수령. 같은 링크의 두 번째 클릭은 ‘이미 사용됨’으로 끊습니다.</td>
-              <td><Pill tone="ok">연결됨</Pill></td>
-            </tr>
-            <tr>
-              <td className="mono">dispatch_attempts</td>
-              <td>발송 시도마다 성공·실패·제공자 메시지 id를 남깁니다(CS·정산 근거).</td>
-              <td><Pill tone="ok">연결됨</Pill></td>
-            </tr>
-            <tr>
-              <td className="mono">Meta / SENS 실발송</td>
-              <td>발송기 코드와 오류 분류는 구현되어 있고, 자격 증명을 넣으면 실제로 나갑니다.</td>
-              <td><Pill tone="warn">실호출 미검증</Pill></td>
-            </tr>
-          </tbody>
-        </table>
+        <details className="details" style={{ marginTop: 0, borderTop: 'none', paddingTop: 0 }}>
+          <summary>서버가 실제로 하는 일</summary>
+          <table className="data">
+            <thead>
+              <tr>
+                <th>서버에 있는 것</th>
+                <th>하는 일</th>
+                <th>상태</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td className="mono">{CALLBACK_PATH}</td>
+                <td>서명 확인 → 댓글 파싱 → 키워드 매칭 → 중복 방지 → 5초 데드라인으로 대기열 적재</td>
+                <td><Pill tone="ok">연결됨</Pill></td>
+              </tr>
+              <tr>
+                <td className="mono">coupon-worker.php</td>
+                <td>대기열 선점 → 1회용 토큰 발급 → DM/알림톡 발송 → 발송 이력 기록 → 재시도·DLQ</td>
+                <td><Pill tone="ok">연결됨</Pill></td>
+              </tr>
+              <tr>
+                <td className="mono">GET /c/&#123;token&#125;</td>
+                <td>쿠폰 수령. 같은 링크의 두 번째 클릭은 ‘이미 사용됨’으로 끊습니다.</td>
+                <td><Pill tone="ok">연결됨</Pill></td>
+              </tr>
+              <tr>
+                <td className="mono">dispatch_attempts</td>
+                <td>발송 시도마다 성공·실패·제공자 메시지 id를 남깁니다(CS·정산 근거).</td>
+                <td><Pill tone="ok">연결됨</Pill></td>
+              </tr>
+              <tr>
+                <td className="mono">Meta / SENS 실발송</td>
+                <td>발송기 코드와 오류 분류는 구현되어 있고, 자격 증명을 넣으면 실제로 나갑니다.</td>
+                <td><Pill tone="warn">실호출 미검증</Pill></td>
+              </tr>
+            </tbody>
+          </table>
+        </details>
         <details className="details">
           <summary>개발자용 세부 설정</summary>
           <ul className="small muted">
@@ -448,7 +451,6 @@ export function CouponPanel() {
                     <button
                       type="button"
                       className="btn small"
-                      style={{ padding: '1px 6px', fontSize: 10.5 }}
                       onClick={() => {
                         void claim(item.dmId ?? -1);
                       }}
@@ -730,7 +732,7 @@ export function CouponPanel() {
 
           <div className="stack" style={{ gap: 10 }}>
             <div className="row between">
-              <strong style={{ fontSize: 13 }}>폭주 대응 점검</strong>
+              <strong className="section-inline-title">폭주 대응 점검</strong>
               <Button
                 primary
                 small

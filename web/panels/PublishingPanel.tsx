@@ -195,7 +195,7 @@ export function PublishingPanel({
             {quota.map((tenant) => (
               <div key={tenant.tenantId} className="tenant-block">
                 <div className="row between" style={{ marginBottom: 6 }}>
-                  <strong style={{ fontSize: 13 }}>{tenant.name}</strong>
+                  <strong className="tenant-name">{tenant.name}</strong>
                   <span className="small muted">{tenant.plan === 'agency' ? '대행사' : '개인'}</span>
                 </div>
                 <div className="stack" style={{ gap: 10 }}>
@@ -324,7 +324,7 @@ export function PublishingPanel({
                 return (
                   <tr key={row.id}>
                     <td>
-                      <strong style={{ fontSize: 12.5 }}>{jobKindLabel(row.kind)}</strong>
+                      <strong>{jobKindLabel(row.kind)}</strong>
                       <div className="small muted">{row.name.replace(/^(render|upload|publish)\s+/, '')}</div>
                     </td>
                       <td>

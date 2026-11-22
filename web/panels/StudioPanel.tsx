@@ -131,8 +131,12 @@ export function StudioPanel(props: StudioPanelProps) {
 
   return (
     <div className="grid sidebar">
-      <div className="stack">
-        <Card eyebrow="9:16 프리뷰" title="렌더 결과 미리보기" hint="엔진의 타임라인·자막·더킹 값을 그대로 그립니다">
+      <div className="stack preview-col">
+        <Card
+          eyebrow="9:16 미리보기"
+          title="렌더 결과"
+          hint="엔진이 계산한 타임라인·자막·배경음악 값을 그대로 그립니다."
+        >
           <div className="phone-wrap">
             <div className="phone" style={{ containerType: 'inline-size' } as CSSProperties}>
               <div className="bg" />
@@ -255,14 +259,14 @@ export function StudioPanel(props: StudioPanelProps) {
           <Kpi
             label="자막 카드"
             value={`${model.cues.length}장`}
-            sub={`가장 긴 줄 ${model.widestCueWidthPx} / 한도 ${Math.round(model.layout.caption.w)}`}
+            sub={`${model.widestCueWidthPx}px / 한도 ${Math.round(model.layout.caption.w)}px`}
             tone={model.widestCueWidthPx > model.layout.caption.w ? 'warn' : undefined}
           />
         </div>
 
         <Card
           title="4비트 대본"
-          hint="주제를 바꾸면 대본·타임라인·자막이 새로 계산됩니다. '대본 다시 생성'은 앵글과 문장을 함께 바꿉니다."
+          hint="주제를 바꾸면 대본·자막이 다시 계산되고, ‘대본 다시 생성’은 앵글과 문장을 함께 바꿉니다."
           actions={
             <>
               <Button small onClick={onOpenPlan} ghost title="같은 주제로 롱폼·블로그까지 엮은 기획 보기">
@@ -281,70 +285,73 @@ export function StudioPanel(props: StudioPanelProps) {
             </>
           }
         >
-          <div className="row" style={{ marginBottom: 8, alignItems: 'center' }}>
-            <Pill tone="ok">{activeAngleLabel}</Pill>
-            <span className="small muted">
+          <div className="meta-line">
+            <span>
+              앵글 <strong>{activeAngleLabel}</strong>
+            </span>
+            <span className="sep" aria-hidden="true" />
+            <span>
               {angle === 'auto' ? '자동 선택' : '직접 선택'} · {resolvedAngle.hookStyle} · 변주 {variation + 1}
             </span>
-            <Pill
-              tone="ghost"
-              title={`분류 근거: ${model.domain.evidence.join(' ') || '단서 없음'}`}
-            >
-              {model.domain.label}
-            </Pill>
-            <Pill tone="ghost">{model.badgeText}</Pill>
+            <span className="sep" aria-hidden="true" />
+            <span title={`분류 근거: ${model.domain.evidence.join(' ') || '단서 없음'}`}>
+              분류 <strong>{model.domain.label}</strong>
+            </span>
           </div>
 
-          <div className="row" style={{ marginBottom: 12, alignItems: 'flex-end' }}>
-            <div className="field" style={{ flex: '2 1 220px' }}>
-              <span>주제</span>
-              <input type="text" value={topic} onChange={(event) => onTopic(event.target.value)} />
+          <div className="form-block">
+            <div className="section-title">
+              주제와 설정
+              <span className="section-note">바꾸면 아래 대본이 바로 다시 계산됩니다</span>
             </div>
-            <div className="field" style={{ flex: '0 0 128px' }}>
-              <span>앵글</span>
-              <select value={angle} onChange={(event) => onAngle(event.target.value as AngleChoice)}>
-                <option value="auto">자동 (순환)</option>
-                {ANGLE_LIST.map((item) => (
-                  <option key={item.id} value={item.id}>
-                    {item.label}
-                  </option>
-                ))}
-              </select>
+            <div className="field-row">
+              <div className="field topic">
+                <span>주제</span>
+                <input type="text" value={topic} onChange={(event) => onTopic(event.target.value)} />
+              </div>
+              <div className="field w-angle">
+                <span>앵글</span>
+                <select value={angle} onChange={(event) => onAngle(event.target.value as AngleChoice)}>
+                  <option value="auto">자동 (순환)</option>
+                  {ANGLE_LIST.map((item) => (
+                    <option key={item.id} value={item.id}>
+                      {item.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="field w-duration">
+                <span>길이</span>
+                <select value={durationSec} onChange={(event) => onDuration(Number(event.target.value))}>
+                  {[30, 45, 60].map((value) => (
+                    <option key={value} value={value}>
+                      {value}초
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="field w-speed">
+                <span>발화 속도 {speed.toFixed(2)}x</span>
+                <input
+                  className="seek"
+                  type="range"
+                  min={0.8}
+                  max={1.3}
+                  step={0.05}
+                  value={speed}
+                  onChange={(event) => onSpeed(Number(event.target.value))}
+                  aria-label="발화 속도"
+                />
+              </div>
+              <div className="field w-toggle">
+                <span>길이 초과 처리</span>
+                <Toggle checked={compress} onChange={onCompress} label="예산 초과 시 압축" />
+              </div>
             </div>
-            <div className="field" style={{ flex: '0 0 92px' }}>
-              <span>길이</span>
-              <select value={durationSec} onChange={(event) => onDuration(Number(event.target.value))}>
-                {[30, 45, 60].map((value) => (
-                  <option key={value} value={value}>
-                    {value}초
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div className="field" style={{ flex: '0 0 124px' }}>
-              <span>발화 속도 {speed.toFixed(2)}x</span>
-              <input
-                className="seek"
-                type="range"
-                min={0.8}
-                max={1.3}
-                step={0.05}
-                value={speed}
-                onChange={(event) => onSpeed(Number(event.target.value))}
-                aria-label="발화 속도"
-              />
-            </div>
-            <Toggle checked={compress} onChange={onCompress} label="예산 초과 시 압축" />
           </div>
-
-          <p className="note" style={{ marginBottom: 10 }}>
-            편집 패키지: 자막 {editPackage.summary.cueCount}장 · 컷 {editPackage.summary.sceneCount}개 · 파일{' '}
-            {editPackage.summary.files.length}개({(editPackage.summary.totalBytes / 1024).toFixed(1)}KB). 내려받으면{' '}
-            {editPackage.summary.files.map((file) => file.name).join(', ')}가 zip 하나에 들어 있습니다.
-          </p>
 
           {model.compression.applied ? (
-            <p className="note" style={{ marginBottom: 10 }}>
+            <p className="note">
               <strong>압축 {model.compression.passes.length}회 적용</strong> — 요청 {sec(model.compression.requestedSec)} →{' '}
               {sec(model.compression.requestedSec - model.compression.savedSec)} (한도 {sec(model.compression.capacitySec)}).
               삭제 유형: {model.compression.passes.slice(0, 3).map((pass) => pass.pass).join(' · ')}
@@ -352,39 +359,29 @@ export function StudioPanel(props: StudioPanelProps) {
             </p>
           ) : null}
           {model.overrunSec > 0.01 ? (
-            <p className="note" style={{ marginBottom: 10 }}>
+            <p className="note">
               <strong>예산 초과 {sec(model.overrunSec)}</strong> — 압축을 켜거나 문장을 줄여야 렌더가 60초 상한을 넘지 않습니다.
             </p>
           ) : null}
 
-          <div className="stack" style={{ gap: 10 }}>
+          <div className="section-title spaced">
+            장면별 대본
+            <span className="section-note">{model.scenes.length}개 장면 · 오른쪽 회색 숫자는 엔진이 정한 시간입니다</span>
+          </div>
+
+          <div className="stack" style={{ gap: 12 }}>
             {model.scenes.map((item, index) => {
               const draft = drafts[index];
               if (!draft) return null;
               const over = item.beat === 'hook' && item.durationSec > 3.5;
               return (
-                <div
-                  key={item.id}
-                  style={{
-                    border: '1px solid var(--line)',
-                    borderRadius: 10,
-                    padding: 12,
-                    background: scene?.id === item.id ? '#fbfcfe' : '#fff',
-                    borderColor: scene?.id === item.id ? '#c9d7e8' : 'var(--line)',
-                  }}
-                >
-                  <div className="row between" style={{ marginBottom: 6 }}>
-                    <div className="row" style={{ gap: 8 }}>
-                      <span
-                        className={`pill ${
-                          item.beat === 'hook' ? 'warn' : item.beat === 'cta' ? 'bad' : item.beat === 'problem' ? 'ghost' : 'ok'
-                        }`}
-                      >
-                        {BEAT_LABEL[item.beat]}
-                      </span>
+                <div key={item.id} className="scene-card" data-active={scene?.id === item.id}>
+                  <div className="scene-head">
+                    <div className="scene-head-left">
+                      <span className={`beat-tag ${item.beat}`}>{BEAT_LABEL[item.beat]}</span>
                       <span className="small muted">{BEAT_HINT[item.beat]}</span>
                     </div>
-                    <span className="small muted mono">
+                    <span className="meta">
                       {item.startSec.toFixed(2)}–{(item.startSec + item.durationSec).toFixed(2)}s · {item.syllables}음절
                     </span>
                   </div>
@@ -394,8 +391,8 @@ export function StudioPanel(props: StudioPanelProps) {
                     onChange={(event) => updateScene(index, event.target.value)}
                     style={{ borderColor: over ? 'var(--bad)' : undefined }}
                   />
-                  <div className="row between" style={{ marginTop: 5 }}>
-                    <span className="small muted">
+                  <div className="scene-foot">
+                    <span className="text">
                       화면 자막 <span className="mono">{item.onScreenText ?? '-'}</span>
                     </span>
                     <span className={over ? 'pill bad' : 'pill ghost'}>
@@ -408,6 +405,16 @@ export function StudioPanel(props: StudioPanelProps) {
               );
             })}
           </div>
+
+          <p className="note">
+            <strong>편집 패키지</strong> — 자막 {editPackage.summary.cueCount}장 · 컷 {editPackage.summary.sceneCount}개 · 파일{' '}
+            {editPackage.summary.files.length}개({(editPackage.summary.totalBytes / 1024).toFixed(1)}KB)를 zip 하나로 받습니다.
+            <span className="file-list">
+              {editPackage.summary.files.map((file) => (
+                <span key={file.name}>{file.name}</span>
+              ))}
+            </span>
+          </p>
         </Card>
 
         <Card title="타임라인" hint="비트 순서와 길이는 타임라인 빌더가 정합니다">
@@ -418,7 +425,7 @@ export function StudioPanel(props: StudioPanelProps) {
               늘어난 시간을 프레임 정지로 채우는 대신 짧게 끝냅니다.
             </p>
           ) : null}
-          <div className="scroll" style={{ marginTop: 10 }}>
+          <div className="scroll" style={{ marginTop: 12, maxHeight: 'none' }}>
             <table className="data">
               <thead>
                 <tr>
@@ -449,7 +456,7 @@ export function StudioPanel(props: StudioPanelProps) {
         </Card>
 
         <div className="grid two">
-          <Card title="키네틱 자막" hint="읽기 속도 22자/초, 최대 2줄 — 엔진의 큐 분할 결과">
+          <Card title="키네틱 자막" hint={`읽기 속도 22자/초, 최대 2줄 — 엔진이 나눈 자막 ${model.cues.length}장`}>
             <div className="scroll">
               <table className="data">
                 <thead>
@@ -591,12 +598,6 @@ function EnvelopeChart({ model, t }: { model: StudioModel; t: number }) {
       <polygon points={`0,100 ${points} 100,100`} fill="url(#envFill)" />
       <polyline points={points} fill="none" stroke="#2f6fa8" strokeWidth="1.1" vectorEffect="non-scaling-stroke" />
       <line x1={playheadX} y1="0" x2={playheadX} y2="100" stroke="#b03a3a" strokeWidth="0.7" vectorEffect="non-scaling-stroke" />
-      <text x="1.5" y="12" fontSize="5" fill="#8b98a8">
-        55%
-      </text>
-      <text x="1.5" y="98" fontSize="5" fill="#8b98a8">
-        15%
-      </text>
     </svg>
   );
 }

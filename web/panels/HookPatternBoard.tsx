@@ -19,7 +19,7 @@ export function HookPatternBoard({ topic }: { topic: string }) {
     <Card
       title="훅 유형별 예상 저장·공유"
       hint="같은 주제로 앵글만 바꿔 쓴 훅 4종 · 경험 규칙으로 계산한 추정치이며 실측이 아닙니다."
-      actions={<Pill tone="ghost">실제 성과는 위 A/B로 확인</Pill>}
+      actions={<span className="small muted">실제 성과는 위 A/B로 확인</span>}
     >
       <div className="scroll" style={{ maxHeight: 'none' }}>
         <table className="data">
@@ -38,7 +38,7 @@ export function HookPatternBoard({ topic }: { topic: string }) {
             {patterns.rows.map((row) => (
               <tr key={row.id}>
                 <td>
-                  <strong style={{ fontSize: 12.5 }}>{row.label}</strong>
+                  <strong>{row.label}</strong>
                   <div className="small muted">{ANGLE_BY_ID[row.angle].label}</div>
                 </td>
                 <td style={{ maxWidth: 280 }}>{row.example}</td>
@@ -54,7 +54,7 @@ export function HookPatternBoard({ topic }: { topic: string }) {
                         }}
                       />
                     </span>
-                    <span className="num mono" style={{ fontSize: 12 }}>
+                    <span className="num mono">
                       {pct(row.saveRate * 100, 2)}
                     </span>
                   </div>
@@ -69,7 +69,7 @@ export function HookPatternBoard({ topic }: { topic: string }) {
                         }}
                       />
                     </span>
-                    <span className="num mono" style={{ fontSize: 12 }}>
+                    <span className="num mono">
                       {pct(row.shareRate * 100, 2)}
                     </span>
                   </div>

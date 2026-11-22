@@ -199,14 +199,21 @@ export function CrossChannelPanel({ topic, onTopic, onBackToStudio }: CrossChann
             />
 
             {analysis ? (
-              <div style={{ marginTop: 12 }}>
-                <div className="row" style={{ marginBottom: 8 }}>
-                  <Pill tone="ok">{`훅 ${analysis.hookStyle}`}</Pill>
-                  <Pill tone="ghost">{`번호 단계 ${analysis.numberedSteps}개`}</Pill>
-                  <Pill tone={analysis.saveTriggers.length > 0 ? 'warn' : 'ghost'}>
-                    {`저장 유도 ${analysis.saveTriggers.length}회`}
-                  </Pill>
-                  <Pill tone="ghost">{`평균 문장 ${analysis.avgSentenceChars}자`}</Pill>
+              <div style={{ marginTop: 16 }}>
+                <div className="meta-line" style={{ marginBottom: 10 }}>
+                  <span>
+                    훅 <strong>{analysis.hookStyle}</strong>
+                  </span>
+                  <span className="sep" aria-hidden="true" />
+                  <span>
+                    번호 단계 <strong>{analysis.numberedSteps}개</strong>
+                  </span>
+                  <span className="sep" aria-hidden="true" />
+                  <span>
+                    저장 유도 <strong>{analysis.saveTriggers.length}회</strong>
+                  </span>
+                  <span className="sep" aria-hidden="true" />
+                  <span>평균 문장 {analysis.avgSentenceChars}자</span>
                 </div>
                 <p className="small muted" style={{ margin: '0 0 8px' }}>
                   첫 줄 «{analysis.hookQuote}» · 마지막 «{analysis.ctaQuote ?? '-'}»
@@ -238,26 +245,30 @@ export function CrossChannelPanel({ topic, onTopic, onBackToStudio }: CrossChann
                 </ul>
               </div>
             ) : (
-              <p className="note" style={{ marginTop: 10, marginBottom: 0 }}>
-                텍스트만 분석합니다(외부 링크는 개발자용 명령에서: <span className="mono">shortform crosschannel --ref-url …</span>).
-                브라우저는 다른 사이트를 읽을 수 없어 붙여넣기만 받습니다.
-              </p>
+              <div style={{ marginTop: 14 }}>
+                <p className="note">
+                  텍스트만 분석합니다. 브라우저는 다른 사이트를 읽을 수 없어 붙여넣기만 받습니다.
+                </p>
+                <details className="details">
+                  <summary>주소로 분석하기 (개발자용)</summary>
+                  <p className="small muted" style={{ margin: 0 }}>
+                    터미널에서 <span className="mono">shortform crosschannel --ref-url …</span> 로 실행합니다.
+                  </p>
+                </details>
+              </div>
             )}
           </Card>
 
           <Card title="적용한 채널 패턴" hint="채널별 구조는 다릅니다. 같은 대본을 세 채널에 그대로 붙이지 않습니다">
-            <div className="stack" style={{ gap: 8 }}>
+            <div className="stack" style={{ gap: 0 }}>
               {plan.appliedPatterns.map((pattern) => (
-                <div key={pattern.channel} className="row between">
-                  <div>
-                    <strong className="small">{pattern.label}</strong>
-                    <div className="small muted">{pattern.appliedIn}</div>
-                  </div>
-                  
+                <div key={pattern.channel} className="pattern-row">
+                  <strong>{pattern.label}</strong>
+                  <span className="small muted">{pattern.appliedIn}</span>
                 </div>
               ))}
             </div>
-            <p className="note" style={{ marginTop: 10, marginBottom: 0 }}>
+            <p className="note">
               {PATTERN_LIBRARY.length}개 채널 패턴이 내장돼 있고, 레퍼런스를 붙이면 그 글의 순서가 우선합니다.
             </p>
           </Card>
@@ -282,7 +293,7 @@ export function CrossChannelPanel({ topic, onTopic, onBackToStudio }: CrossChann
               </Button>
             }
           >
-            <div className="scroll">
+            <div className="scroll" style={{ maxHeight: 'none' }}>
               <table className="data">
                 <thead>
                   <tr>
@@ -321,7 +332,7 @@ export function CrossChannelPanel({ topic, onTopic, onBackToStudio }: CrossChann
             <p className="small" style={{ marginTop: 0 }}>
               <strong>콜드오픈</strong> {plan.longform.coldOpen}
             </p>
-            <div className="scroll">
+            <div className="scroll" style={{ maxHeight: 'none' }}>
               <table className="data">
                 <thead>
                   <tr>
@@ -359,11 +370,12 @@ export function CrossChannelPanel({ topic, onTopic, onBackToStudio }: CrossChann
               </Button>
             }
           >
-            <div className="row" style={{ marginBottom: 8, flexWrap: 'wrap', gap: 6 }}>
-              {plan.blog.titleCandidates.map((title) => (
-                <Pill key={title} tone="ghost">
+            <div className="title-candidates">
+              {plan.blog.titleCandidates.map((title, index) => (
+                <span key={title} className="title-candidate">
+                  <span className="no">{index + 1}</span>
                   {title}
-                </Pill>
+                </span>
               ))}
             </div>
             <p className="small muted" style={{ marginTop: 0 }}>
@@ -372,11 +384,11 @@ export function CrossChannelPanel({ topic, onTopic, onBackToStudio }: CrossChann
             <p className="small">
               <strong>도입</strong> {plan.blog.intro}
             </p>
-            <div className="stack" style={{ gap: 8 }}>
+            <div className="stack" style={{ gap: 10 }}>
               {plan.blog.outline.map((section) => (
-                <div key={section.heading} style={{ border: '1px solid var(--line)', borderRadius: 10, padding: 10 }}>
+                <div key={section.heading} className="outline-block">
                   <strong className="small">소제목 · {section.heading}</strong>
-                  <ul className="small" style={{ margin: '6px 0 0 16px', padding: 0 }}>
+                  <ul className="small" style={{ margin: '8px 0 0 0', paddingLeft: 18 }}>
                     {section.points.map((point) => (
                       <li key={point}>{point}</li>
                     ))}
@@ -407,7 +419,7 @@ export function CrossChannelPanel({ topic, onTopic, onBackToStudio }: CrossChann
           </Card>
 
           <Card title="리퍼포징 맵" hint="숏폼 장면이 어느 챕터와 어느 소제목으로 이어지는지">
-            <div className="scroll">
+            <div className="scroll" style={{ maxHeight: 'none' }}>
               <table className="data">
                 <thead>
                   <tr>
@@ -433,21 +445,24 @@ export function CrossChannelPanel({ topic, onTopic, onBackToStudio }: CrossChann
           </Card>
 
           <Card title="AI 재작성 연결" hint="AI 키가 있으면 같은 형식으로 다시 쓰고, 없으면 위 결과가 최종입니다">
-            <div className="row between" style={{ marginBottom: 8 }}>
-              <span className="small muted">브라우저 내장 패턴 엔진으로 즉시 실행됩니다.</span>
-              <Button small ghost onClick={() => setShowPrompt((value) => !value)}>
-                {showPrompt ? '요청문 닫기' : 'AI 요청문 보기'}
-              </Button>
-            </div>
-            <p className="note" style={{ marginTop: 0 }}>
-              터미널에서 <span className="mono">ANTHROPIC_API_KEY=… npm run cli -- crosschannel --topic "{plan.topic}" --llm --out plan.md</span>
+            <p className="small muted" style={{ marginTop: 0 }}>
+              브라우저 내장 패턴 엔진으로 즉시 실행됩니다. 터미널에서 같은 결과를 파일로 받을 수도 있습니다.
             </p>
-            {showPrompt ? <pre className="prompt-box">{buildPlannerPrompt(plan)}</pre> : null}
-            <ul className="small" style={{ margin: '10px 0 0 16px', padding: 0 }}>
+            <ul className="small" style={{ margin: '12px 0 0 0', paddingLeft: 18, lineHeight: 1.8 }}>
               {plan.notes.map((note) => (
                 <li key={note}>{note}</li>
               ))}
             </ul>
+            <details className="details">
+              <summary>명령줄에서 실행하기</summary>
+              <p className="small muted" style={{ margin: '0 0 10px' }}>
+                <span className="mono">ANTHROPIC_API_KEY=… npm run cli -- crosschannel --topic "{plan.topic}" --llm --out plan.md</span>
+              </p>
+              <Button small ghost onClick={() => setShowPrompt((value) => !value)}>
+                {showPrompt ? 'AI 요청문 접기' : 'AI 요청문 보기'}
+              </Button>
+              {showPrompt ? <pre className="prompt-box" style={{ marginTop: 10 }}>{buildPlannerPrompt(plan)}</pre> : null}
+            </details>
           </Card>
         </div>
       </div>
