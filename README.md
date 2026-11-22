@@ -1501,6 +1501,19 @@ A/B 카드는 "이미 노출을 쓴 뒤"의 질문에 답한다. 이 표는 그 
 [마지막]   계약 전에 다시 볼 순서라서 저장해두세요.
 ```
 
+라이브(<https://shye-seo.github.io/sns-shortform-automation/>)에서 주제 `전세사기 주의할점`을 넣은 화면:
+
+<table>
+  <tr>
+    <td><img src="docs/preview/web-console-studio-jeonse.png" alt="AI 모델 직접 연결 카드와 9:16 미리보기(전세사기)" /></td>
+    <td><img src="docs/preview/web-console-jeonse-script.png" alt="전세사기 주의할점 4비트 대본 — 등기부등본·확정일자·완납증명" /></td>
+  </tr>
+  <tr>
+    <td><img src="docs/preview/web-console-jeonse-cta.png" alt="HUG 특약 단계와 마지막 유도" /></td>
+    <td>도메인 <strong>집·부동산</strong> · 지식 팩 <strong>전세사기 예방</strong> · 훅 2.77s · 해결 4단계 · 화면 자막이 단계와 같은 순서</td>
+  </tr>
+</table>
+
 ### 23.4 검증
 
 - `tests/topicKnowledge.test.ts` — 승혜 님 주제 10개 × (분류·팩·실제 정보 포함·다른 도메인 문장
