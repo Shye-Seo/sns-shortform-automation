@@ -241,6 +241,11 @@ export function writeDomainDrafts(input: DomainDraftInput): DomainDraftResult {
   const screens = bank.screens;
   const stepScreens = pack?.screens?.step ?? screens.step;
   const angleIndex = ANGLE_LIST.findIndex((entry) => entry.id === angle.id);
+  const stepScreenAt = (index: number): string => {
+    const aligned = pack?.screens?.step;
+    if (aligned && aligned.length >= start + stepCount) return aligned[start + index] as string;
+    return pickAt(stepScreens, index + hash);
+  };
 
   const drafts: SceneDraft[] = [
     {
@@ -260,7 +265,9 @@ export function writeDomainDrafts(input: DomainDraftInput): DomainDraftResult {
     ...steps.map((step, index) => ({
       beat: 'solution' as const,
       narration: step,
-      onScreenText: fillDomainTemplate(pickAt(stepScreens, index + hash), context).slice(0, 14),
+      // 지식 팩의 화면 자막은 단계와 1:1이다. 해시로 돌리면 "등기부등본"을 말하는데
+      // 화면에 "HUG 특약"이 뜨는 식으로 어긋나므로, 팩이 있으면 같은 순서로 쓴다.
+      onScreenText: fillDomainTemplate(stepScreenAt(index), context).slice(0, 14),
       emphasis: [],
       visual: visuals[Math.min(visuals.length - 1, 2 + (index % 2))],
     })),

@@ -174,6 +174,15 @@ describe('지식 팩 기반 4비트 대본', () => {
     expect(result.hashtags).toContain('#전세사기');
   });
 
+  it('지식 팩의 화면 자막이 말하는 단계와 같은 순서다', () => {
+    const result = writeTopicDrafts({ topic: '전세사기 주의할점', durationSec: 60, variation: 0, angle: 'auto' });
+    const steps = result.drafts.filter((draft) => draft.beat === 'solution');
+    expect(steps[0]?.onScreenText).toBe('등기부등본');
+    expect(steps[1]?.onScreenText).toContain('확정일자');
+    expect(steps[2]?.onScreenText).toContain('완납증명');
+    expect(steps[3]?.onScreenText).toContain('HUG');
+  });
+
   it('같은 주제를 여러 번 눌러도 단계가 겹치지 않고 앵글이 돈다', () => {
     const hooks = new Set<string>();
     const angles = new Set<string>();
