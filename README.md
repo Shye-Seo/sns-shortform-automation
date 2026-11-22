@@ -1,6 +1,6 @@
 <p align="center">
   <a href="https://github.com/Shye-Seo/sns-shortform-automation/actions/workflows/ci.yml"><img alt="CI Pipeline" src="https://github.com/Shye-Seo/sns-shortform-automation/actions/workflows/ci.yml/badge.svg" /></a>
-  <img alt="Tests" src="https://img.shields.io/badge/tests-796_(Vitest_611_%C2%B7_PHPUnit_185)-2E7D32?style=flat-square" />
+  <img alt="Tests" src="https://img.shields.io/badge/tests-864_(Vitest_679_%C2%B7_PHPUnit_185)-2E7D32?style=flat-square" />
   <img alt="Web demo" src="https://img.shields.io/badge/web_demo-live_(GitHub_Pages)-13315C?style=flat-square" />
 </p>
 
@@ -12,7 +12,7 @@
 그것을 **수십 개 테넌트 · 수백 편 · 플랫폼 쿼터 안에서** 안정적으로 운영하는 것은
 완전히 다른 문제입니다. 이 저장소는 대규모 배포 환경의 안정성과 확장성 문제를 풉니다.
 
-`TypeScript` · `Node.js 20` · `ffmpeg` · `Vitest 611 tests` · `커버리지 90.3%`
+`TypeScript` · `Node.js 20` · `ffmpeg` · `Vitest 679 tests` · `커버리지 90.3%`
 `PHP 8.2` · `MySQL 8.0` · `Meta Graph API` · `NCP SENS 알림톡` · `PHPUnit 185 tests`
 
 | 계층 | 무엇을 보장하나 |
@@ -27,14 +27,15 @@
 | **서버 계층(DB·API)** | MySQL 8.0 기반 작업 원장 보존 및 PHP 백엔드 워커의 `SKIP LOCKED` 기반 동시성 경합 없는 작업 선점 |
 
 ```bash
-npm ci && npm run verify      # 611 tests, 네트워크·ffmpeg 없이
+npm ci && npm run verify      # 679 tests, 네트워크·ffmpeg 없이
 npm run cli -- studio         # 터미널 데모 콘솔
 npm run dev:web               # 브라우저 콘솔 → http://127.0.0.1:4173
 ```
 
 **웹 데모**: <https://shye-seo.github.io/sns-shortform-automation/> — `main` / `/docs` 소스로 배포되어
-있습니다. 9:16 스튜디오, 게시물별 댓글 쿠폰 규칙(팔로워 전용·발송 간격 포함), 발행 전 규제·안전영역 점검,
-편집 패키지 내려받기, 예약 발행 한도, 훅 A/B 비교를 설치 없이 씁니다(18장, 22장).
+있습니다. **실사용 스튜디오**(사진·영상 업로드 또는 링크로 컷 편집 → 9:16 MP4/WebM과 4:5 카드뉴스 ZIP을
+브라우저에서 바로 렌더, 24장), 9:16 스튜디오, 게시물별 댓글 쿠폰 규칙(팔로워 전용·발송 간격 포함),
+발행 전 규제·안전영역 점검, 편집 패키지 내려받기, 예약 발행 한도, 훅 A/B 비교를 설치 없이 씁니다.
 화면에는 엔진 상태값(`dlq`, `failed`)이나 영문 오류 로그를 그대로 그리지 않고, 그 뜻과 다음 할 일을
 한국어로 옮겨 보여 줍니다(`web/model/labels.ts`).
 
@@ -1118,8 +1119,9 @@ npm run typecheck:web # 타입 검사 (src + web, DOM lib 포함)
 - Meta Graph API·YouTube Data API·Redis·SENS는 자격 증명이 없어 호출하지 않습니다. 데모의
   한도·거부·DLQ는 엔진이 내린 판정이고, 플랫폼의 응답이 아닙니다.
 - 훅 A/B의 노출·시청 수는 시뮬레이션입니다. 검정·신뢰구간·승자 판정은 실제 통계 모듈이 계산합니다.
-- 브라우저는 렌더하지 않습니다. 프리뷰는 타임라인·자막·더킹 값을 그리는 화면이고, 인코딩은
-  워커의 ffmpeg가 `docs/demo.mp4`처럼 수행합니다.
+- 이 탭의 9:16 프리뷰는 타임라인·자막·더킹 값을 그리는 화면이고, 배포 파이프라인의 최종 인코딩은
+  워커의 ffmpeg가 수행합니다. 사용자가 올린 실제 파일로 결과물을 만드는 경로는 별도 탭인
+  **실사용 스튜디오**(24장)이며, 그쪽은 서버 없이 브라우저의 `MediaRecorder`로 녹화합니다.
 
 ---
 
@@ -1522,6 +1524,118 @@ A/B 카드는 "이미 노출을 쓴 뒤"의 질문에 답한다. 이 표는 그 
   401·형식 오류 메시지, 키 저장/삭제/깨진 값 처리.
 - `tests/aiPanel.test.tsx` — 실제 DOM에서 키 없이 내장 엔진 → 키 입력·생성 → 가짜 응답이 대본으로
   들어오고 `생성 OpenAI gpt-4o-mini로 생성`이 표시되는지, 키 삭제 후 내장 엔진으로 돌아오는지.
+
+## 24. 실사용 스튜디오 — 사진·영상·링크로 9:16 영상과 카드뉴스를 브라우저에서 렌더 (2026-11-22)
+
+18장의 9:16 스튜디오는 **대본을 화면에 그리는 읽기 모델**이었습니다. 주제를 바꾸면 문장과 자막이
+다시 계산되지만, 화면에 뜨는 것은 배경 그라데이션이지 촬영한 사진이 아니었고, 내려받는 것도
+`.srt`와 컷 타임시트뿐이었습니다. 이번 작업은 그 옆에 **파일이 결과물이 되는 탭**을 붙였습니다.
+정적 GitHub Pages에는 서버도 ffmpeg도 없으므로, 입력 → 편집 → 인코딩을 전부 브라우저 안에서 닫았습니다.
+
+### 24.1 세 축
+
+| 축 | 무엇을 하는가 | 구현 |
+|----|---------------|------|
+| **입력** | 사진·영상 드래그앤드롭(여러 개), 블로그·유튜브 링크, 본문 붙여넣기, 주제만 입력 | `web/model/creator/importSource.ts`, `media.ts`, `mediaStore.ts` |
+| **편집** | 컷 순서·길이(0.5~15초)·켄 번스·자막 위치(상/중/하)·배경(박스/띠/외곽선)·전환·9:16 세이프존·공정위 문구·BGM | `types.ts`, `timeline.ts`, `bgm.ts`, `panels/creator/*` |
+| **출력** | 9:16 MP4/WebM(진행률 표시), 4:5 카드뉴스 PNG 1080×1350 + ZIP | `render.ts`, `cardNews.ts`, `videoExport.ts` |
+
+`web/model/creator/render.ts`의 `drawFrame(ctx, spec)`이 **미리보기·녹화·카드뉴스가 공유하는 한 곳**입니다.
+Canvas 2D의 부분집합(`Paint2D`)만 쓰므로, Node 테스트에서는 호출을 기록하는 가짜 ctx로 같은 함수를
+검증합니다. 화면에서 본 프레임과 저장된 프레임이 다를 수 있는 지점을 없애려는 선택입니다.
+
+### 24.2 서버 없이 되는 것과, 안 되는 것
+
+**되는 것** — 9:16 미리보기는 `<canvas>`(1080×1920)에 매 프레임 그리고, 녹화는
+`canvas.captureStream(30)` + `MediaRecorder`로 실시간으로 담습니다. BGM은 `bgm.ts`가 BPM·음계·패턴으로
+만든 음표를 `AudioContext`로 예약하고, `MediaStreamDestination`의 오디오 트랙을 캔버스 스트림에
+붙입니다. 즉 12초 영상은 12초 동안 그리며 담고, 진행률은 장식이 아니라 실제 경과입니다.
+
+**안 되는 것** — 다른 사이트의 HTML을 마음대로 읽는 일입니다. 정적 페이지의 `fetch`는 CORS가 열린
+곳만 읽습니다. 실측(2026-11-22, Chromium) 결과는 다음과 같아서, 가져오기를 세 단계로 나눴습니다.
+
+| 경로 | 실제 결과 | 처리 |
+|------|-----------|------|
+| YouTube oEmbed (`youtube.com/oembed`) | 200, 제목·작성자·썸네일 | 제목+썸네일로 컷 생성, 본문은 붙여넣기 안내 |
+| YouTube 썸네일 (`i.ytimg.com`) | 200 → blob | object URL로 캔버스에 그림 |
+| 네이버 블로그 RSS/HTML | `Failed to fetch` | RSS 시도 → 프록시(선택) → 붙여넣기 폴백 |
+| 티스토리 RSS | `Failed to fetch` | 같음 |
+| `r.jina.ai` 리더 프록시 | 200, 마크다운 | 켜면 본문·사진 URL 파싱 |
+| 인스타그램 | 로그인 벽 | 시도하지 않고 이유를 표시 |
+
+원격 사진은 `<img src>`로 바로 그리지 않고 `fetch → blob → object URL`로 받습니다. 주소를 그대로
+그리면 캔버스가 오염(taint)되어 `toBlob`과 `MediaRecorder`가 막히기 때문입니다. 사진 서버가
+CORS를 막으면 조용히 빈 화면을 만들지 않고 "보호되어 있어 파일로 올려 주세요"라고 말합니다.
+
+### 24.3 코덱 — 브라우저마다 담을 수 있는 형식이 다르다
+
+| 브라우저 | `video/mp4;codecs=avc1` | `video/mp4;…,mp4a` | `video/webm;codecs=vp9,opus` | 실제 저장 |
+|----------|------------------------|--------------------|------------------------------|-----------|
+| Chromium 158 (이 환경에서 실측) | 지원 | **미지원**(AAC 인코더 없음) | 지원 | MP4(H.264) + Opus, 또는 WebM |
+| Safari 14.1+ (문서화된 범위) | 지원 | 지원(AAC) | 미지원 | MP4(H.264 + AAC) |
+| Firefox (문서화된 범위) | 미지원 | 미지원 | 지원 | WebM |
+
+표의 Safari·Firefox 줄은 각 브라우저의 공개 지원 범위를 적은 것이고, 이 저장소의 E2E가 실제로
+파일을 만들어 확인한 것은 Chromium 한 줄입니다. 화면은 실행 시점에 `MediaRecorder.isTypeSupported`로
+다시 판단하므로, 지원 범위가 바뀌면 문구도 함께 바뀝니다.
+
+그래서 `pickRecorderMime`은 지원되는 첫 후보를 고르고, 화면은 **고른 결과를 그대로 말합니다**.
+Chromium에서 MP4를 고르면 오디오는 Opus로 mux됩니다(ffprobe: `h264 1080×1920` + `opus 48kHz`).
+인스타·쇼츠 업로드와 브라우저 재생에는 문제가 없지만, QuickTime 같은 데스크톱 플레이어는 소리를
+못 낼 수 있어 화면에 그렇게 적습니다. BGM을 '없음'으로 두면 무음 MP4가 되어 이 문제 자체가 없습니다.
+
+### 24.4 검증
+
+단위 테스트(신규 68건)는 렌더러의 숫자를 고정합니다.
+
+| 파일 | 건수 | 고정한 것 |
+|------|------|-----------|
+| `tests/creatorRender.test.ts` | 13 | cover 배치·켄 번스 가장자리·줄바꿈(누적 금지)·3줄 제한·안전영역 y·가이드/진행 바 제외·전환 합성 |
+| `tests/creatorTimeline.test.ts` | 9 | 구간 경계·진행률·전환 진행률·이동 범위·프레임 계획 |
+| `tests/creatorImport.test.ts` | 18 | 유튜브 3형식·네이버/티스토리/인스타 구분·HTML/RSS/Atom/마크다운 파서·문장→컷·CORS 차단 시 프록시·붙여넣기 안내 |
+| `tests/creatorCardNews.test.ts` | 8 | 4:5 레이아웃 비겹침·제목 2줄/본문 3줄·공정위 문구·ZIP CRC/중앙 디렉터리/UTF-8 플래그 |
+| `tests/creatorMediaBgm.test.ts` | 13 | 내장 루프 음표가 영상 길이 안에 있음·코덱 선택·캡션 문구·파일 이름 |
+| `tests/creatorPanel.test.tsx` | 7 | jsdom에서 탭 이동·컷 추가/삭제·붙여넣기로 컷 생성·공정위 선택·캔버스 없을 때 안내 |
+
+E2E는 실제 파일로 끝까지 돌립니다(`e2e/run.mjs`, Playwright, **21개 체크 전부 통과**).
+
+```
+전체 비우기 → kitchen-01.png·kitchen-02.png·clip.mp4 업로드(3컷)
+→ 자막 수정(캔버스 dataURL 변화 확인) → 세이프존 토글 → 공정위 '제품협찬'
+→ 컷 순서 변경 → 카드뉴스 3장 생성·ZIP 다운로드(678,719 bytes, PNG 3개)
+→ 영상 렌더링: 1080×1920 · 4.6초 · 946,653 bytes · MP4(H.264)+Opus · <video> 재생 확인
+→ 붙여넣기로 6컷 생성 → 유튜브 링크 가져오기 3컷 → 콘솔 오류 0
+```
+
+```bash
+npm run build:web
+npm run e2e          # playwright가 없으면 PLAYWRIGHT_PATH=/path/to/playwright/index.mjs
+```
+
+<table>
+  <tr>
+    <td><img src="docs/preview/web-creator-studio.png" alt="실사용 스튜디오 — 샘플 컷과 9:16 프리뷰" /></td>
+    <td><img src="docs/preview/web-creator-editor.png" alt="실제 사진·영상으로 컷 편집과 카드뉴스" /></td>
+  </tr>
+  <tr>
+    <td><img src="docs/preview/web-creator-cards.png" alt="카드뉴스 4:5 미리보기와 ZIP" /></td>
+    <td><img src="docs/preview/web-creator-render.png" alt="MP4 렌더 결과와 재생" /></td>
+  </tr>
+</table>
+
+### 24.5 정직한 경계
+
+- **실시간 녹화이지 프레임 정확한 인코딩이 아닙니다.** 탭이 백그라운드로 가면 브라우저가 그리기를
+  늦추므로 프레임이 듬성해질 수 있습니다(길이는 유지). 서버 ffmpeg 파이프라인(3~13장)이 이 경우의
+  정답이고, 이 탭은 서버 없이 한 편을 바로 뽑는 용도입니다.
+- 영상 컷은 **처음부터 재생**하며 길이만 조정합니다(트림 시작점 UI는 없습니다). 영상에는 켄 번스를
+  적용하지 않습니다 — 이미 움직이는 화면에 확대를 겹치면 흔들려 보입니다.
+- 유튜브는 공개 API로 **제목·썸네일만** 가져옵니다. 자막·설명은 공개 엔드포인트가 없어 붙여넣기가
+  필요합니다.
+- 네이버 블로그 사진은 CORS로 막히는 경우가 많아, 프록시를 켜도 사진은 자리 표시로 남을 수 있습니다.
+  이때 화면은 몇 장이 대체됐는지 숫자로 알립니다.
+- 렌더 결과는 **파일 생성까지**입니다. 인스타·유튜브 업로드는 이 탭에서 하지 않습니다(발행은 17·19장의
+  어댑터와 쿼터 계획이 담당).
 
 ## 작성자
 

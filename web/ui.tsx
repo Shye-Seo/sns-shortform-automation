@@ -121,6 +121,7 @@ export function Button({
   small,
   disabled,
   title,
+  testId,
 }: {
   children: ReactNode;
   onClick?: () => void;
@@ -129,12 +130,13 @@ export function Button({
   small?: boolean;
   disabled?: boolean;
   title?: string;
+  testId?: string;
 }) {
   const className = ['btn', primary ? 'primary' : '', ghost ? 'ghost' : '', small ? 'small' : '']
     .filter(Boolean)
     .join(' ');
   return (
-    <button type="button" className={className} onClick={onClick} disabled={disabled} title={title}>
+    <button type="button" className={className} onClick={onClick} disabled={disabled} title={title} data-testid={testId}>
       {children}
     </button>
   );

@@ -7,12 +7,15 @@ import { PublishingPanel } from './panels/PublishingPanel';
 import { HookPanel } from './panels/HookPanel';
 import { CrossChannelPanel } from './panels/CrossChannelPanel';
 import { OsmuPanel } from './panels/OsmuPanel';
+import { CreatorStudioPanel } from './panels/CreatorStudioPanel';
 import { draftBeatScene } from './model/studio';
+import { Button } from './ui';
 
-type TabId = 'studio' | 'plan' | 'osmu' | 'coupon' | 'calendar' | 'hooks';
+type TabId = 'studio' | 'creator' | 'plan' | 'osmu' | 'coupon' | 'calendar' | 'hooks';
 
 const TABS: Array<{ id: TabId; label: string }> = [
   { id: 'studio', label: '9:16 스튜디오' },
+  { id: 'creator', label: '실사용 스튜디오' },
   { id: 'plan', label: '크로스채널 기획' },
   { id: 'osmu', label: '한 편을 세 곳으로' },
   { id: 'coupon', label: '댓글 → DM 쿠폰' },
@@ -86,8 +89,8 @@ export function App() {
           <p className="eyebrow">숏폼 운영 콘솔</p>
           <h1>숏폼 스튜디오</h1>
           <p className="lede">
-            주제 하나로 대본·자막·9:16 미리보기까지 만들고, 올린 뒤에는 댓글 쿠폰과 예약 발행 한도,
-            어떤 첫 문장이 잘 먹혔는지까지 이 화면에서 확인합니다.
+            사진·영상을 올리거나 링크를 붙여 9:16 영상과 4:5 카드뉴스를 브라우저에서 바로 렌더링하고,
+            주제 하나로 대본·자막·발행 한도·댓글 쿠폰까지 이 화면에서 확인합니다.
           </p>
         </div>
         <div className="masthead-side">
@@ -95,25 +98,25 @@ export function App() {
             <span className="dot" aria-hidden="true" />
             주제를 바꾸면 대본과 자막이 다시 계산됩니다
           </span>
-          <span className="status-sub">9:16 · 4장면 기준</span>
+          <span className="status-sub">9:16 렌더 · MP4/WebM · 카드뉴스 ZIP</span>
         </div>
       </header>
 
       <div className="flow">
         <span className="flow-step">
-          <span className="flow-no">1</span>주제 입력
+          <span className="flow-no">1</span>사진·영상·링크
         </span>
         <span className="flow-arrow" aria-hidden="true">
           →
         </span>
         <span className="flow-step">
-          <span className="flow-no">2</span>대본 · 9:16 미리보기
+          <span className="flow-no">2</span>9:16 편집 · 미리보기
         </span>
         <span className="flow-arrow" aria-hidden="true">
           →
         </span>
         <span className="flow-step">
-          <span className="flow-no">3</span>발행 · 규칙 확인
+          <span className="flow-no">3</span>영상 · 카드뉴스 내보내기
         </span>
         <span className="flow-note">탭을 바꿔도 같은 주제로 이어집니다</span>
       </div>
@@ -132,6 +135,17 @@ export function App() {
           </button>
         ))}
       </nav>
+
+      {tab === 'studio' ? (
+        <div className="creator-banner">
+          <span>
+            <strong>실사용 스튜디오</strong> — 올린 사진·영상으로 9:16 영상과 카드뉴스를 바로 렌더링합니다.
+          </span>
+          <Button small primary onClick={() => setTab('creator')}>
+            실사용 스튜디오 열기
+          </Button>
+        </div>
+      ) : null}
 
       {tab === 'studio' ? (
         <StudioPanel
@@ -159,6 +173,8 @@ export function App() {
           }}
         />
       ) : null}
+
+      {tab === 'creator' ? <CreatorStudioPanel /> : null}
 
       {tab === 'plan' ? (
         <CrossChannelPanel topic={topic} onTopic={changeTopic} onBackToStudio={() => setTab('studio')} />

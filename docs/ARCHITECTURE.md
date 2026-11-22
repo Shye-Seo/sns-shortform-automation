@@ -261,3 +261,29 @@ flowchart LR
 이 계층을 추가하면서 1세대 코드는 바꾸지 않았습니다. `renderProject`와 `publishPayload`는
 그대로이고, 큐의 핸들러가 그 함수를 호출할 뿐입니다. **교체 가능한 경계**를 지키는 것이
 2세대 작업의 실제 내용이었습니다.
+
+## 7. 브라우저 렌더 계층 (실사용 스튜디오)
+
+서버 파이프라인(1~6장)과 별개로, 정적 사이트에서 **올린 파일이 곧 결과물**이 되는 경로가
+`web/model/creator/`에 있습니다. 여기서 지킨 경계는 세 가지입니다.
+
+```
+업로드/링크 ──▶ CreatorCut[] ──▶ CreatorTimeline ──▶ drawFrame(ctx) ──┬─▶ <canvas> 미리보기
+                (types.ts)        (timeline.ts)       (render.ts)     ├─▶ MediaRecorder → MP4/WebM
+                                                                       └─▶ drawCard → PNG/ZIP
+```
+
+1. **한 컷 모델, 세 출력.** 미리보기·영상·카드뉴스가 같은 `CreatorCut[]`를 읽습니다. 컷 길이가
+   타임라인의 유일한 시간 근거이고(`buildCreatorTimeline`), 발화량으로 시간을 정하던 9:16
+   스튜디오와 달리 여기서는 사용자가 정한 초가 우선입니다.
+2. **그리기는 순수 함수.** `drawFrame`은 `Paint2D`(Canvas 2D의 부분집합)만 받습니다. 그래서
+   Node 테스트가 가짜 ctx로 호출 기록을 검사할 수 있고, 브라우저 없이 줄바꿈·안전영역·
+   가이드 제외 규칙을 고정합니다. 미리보기와 녹화가 같은 함수를 부르므로 "화면과 파일이 다르다"가
+   구조적으로 불가능합니다.
+3. **외부 입력은 실패를 값으로.** `importFromUrl`은 `ok | blocked | failed`와 경로별 시도 기록을
+   돌려주고, UI는 그 기록을 그대로 보여 줍니다. CORS로 막힌 것을 성공으로 감추지 않습니다.
+   원격 사진도 `fetch → blob → object URL`을 거쳐야 캔버스가 오염되지 않습니다.
+
+브라우저 인코딩은 `MediaRecorder`의 실시간 녹화입니다. 프레임 정확도가 필요한 배포용 렌더는
+여전히 워커의 ffmpeg(`renderProject`)가 담당하고, 이 계층은 "서버 없이 한 편 바로 뽑기"에
+한정합니다. 두 경로가 같은 `CANVAS`(1080×1920)·세이프존 정의(`PLATFORM_UI_ZONES`)를 공유합니다.

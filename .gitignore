@@ -20,6 +20,7 @@ assets/music/*
 !assets/music/.gitkeep
 *.mp4
 !docs/demo.mp4
+!e2e/fixtures/*.mp4
 *.wav
 *.mp3
 *.m4a

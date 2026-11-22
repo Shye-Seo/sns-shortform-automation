@@ -61,7 +61,8 @@
     "cli": "tsx src/cli.ts",
     "build:web": "node web/build.mjs",
     "dev:web": "npm run build:web && node web/serve.mjs",
-    "typecheck:web": "tsc -p web/tsconfig.json --noEmit"
+    "typecheck:web": "tsc -p web/tsconfig.json --noEmit",
+    "e2e": "node e2e/run.mjs"
   },
   "dependencies": {
     "commander": "^12.1.0",
