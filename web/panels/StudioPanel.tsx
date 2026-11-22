@@ -12,6 +12,7 @@ import { resolveAngle } from '../../src/services/topicDraftWriter';
 import { Button, Card, Kpi, Pill, Toggle, clock, pct, sec } from '../ui';
 import { BEAT_HINT, BEAT_LABEL, buildStudioModel, cueAt, gainAt, sceneAt, type StudioModel } from '../model/studio';
 import { downloadEditPackage, editPackageFor } from '../model/editPackage';
+import { AiModelPanel } from './AiModelPanel';
 
 const ZONE_KO: Record<string, string> = {
   'top-bar': '상단 여백',
@@ -41,6 +42,10 @@ export interface StudioPanelProps {
   /** Bump the variation: new angle, new phrasing, new captions. */
   onRegenerate: () => void;
   onOpenPlan: () => void;
+  /** 대본을 만든 주체(내장 엔진 또는 연결한 AI 모델). */
+  aiSource: string | null;
+  onAiDrafts: (drafts: SceneDraft[], source: string) => void;
+  onAiReset: () => void;
 }
 
 export function StudioPanel(props: StudioPanelProps) {
@@ -60,6 +65,9 @@ export function StudioPanel(props: StudioPanelProps) {
     variation,
     onRegenerate,
     onOpenPlan,
+    aiSource,
+    onAiDrafts,
+    onAiReset,
   } = props;
   const resolvedAngle = resolveAngle(angle, topic, variation);
   const activeAngleLabel = ANGLE_LIST.find((item) => item.id === resolvedAngle.id)?.label ?? resolvedAngle.label;
@@ -264,6 +272,15 @@ export function StudioPanel(props: StudioPanelProps) {
           />
         </div>
 
+        <AiModelPanel
+          topic={topic}
+          durationSec={durationSec}
+          angle={angle}
+          source={aiSource}
+          onDrafts={onAiDrafts}
+          onReset={onAiReset}
+        />
+
         <Card
           title="4비트 대본"
           hint="주제를 바꾸면 대본·자막이 다시 계산되고, ‘대본 다시 생성’은 앵글과 문장을 함께 바꿉니다."
@@ -296,6 +313,11 @@ export function StudioPanel(props: StudioPanelProps) {
             <span className="sep" aria-hidden="true" />
             <span title={`분류 근거: ${model.domain.evidence.join(' ') || '단서 없음'}`}>
               분류 <strong>{model.domain.label}</strong>
+              {model.domain.knowledge ? ` · ${model.domain.knowledge.pack.label}` : ''}
+            </span>
+            <span className="sep" aria-hidden="true" />
+            <span title="키를 연결하지 않으면 내장 도메인 엔진이 대본을 만듭니다">
+              생성 <strong>{aiSource ?? '내장 엔진'}</strong>
             </span>
           </div>
 

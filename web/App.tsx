@@ -31,6 +31,8 @@ export function App() {
   const [angle, setAngle] = useState<AngleChoice>('auto');
   const [variation, setVariation] = useState(0);
   const [drafts, setDrafts] = useState<SceneDraft[]>(() => draftBeatScene(DEFAULT_TOPIC, 45, 0, 'auto'));
+  /** 대본을 만든 주체. AI 키로 생성하면 그 모델 이름이 들어간다. */
+  const [aiSource, setAiSource] = useState<string | null>(null);
 
   /**
    * The topic is the input the script is derived from, so changing it has to
@@ -41,22 +43,35 @@ export function App() {
   const changeTopic = (value: string): void => {
     setTopic(value);
     setDrafts(draftBeatScene(value, durationSec, variation, angle));
+    setAiSource(null);
   };
 
   const regenerate = (): void => {
     const next = variation + 1;
     setVariation(next);
     setDrafts(draftBeatScene(topic, durationSec, next, angle));
+    setAiSource(null);
   };
 
   const changeAngle = (value: AngleChoice): void => {
     setAngle(value);
     setDrafts(draftBeatScene(topic, durationSec, variation, value));
+    setAiSource(null);
   };
 
   const changeDuration = (value: number): void => {
     setDurationSec(value);
     setDrafts(draftBeatScene(topic, value, variation, angle));
+    setAiSource(null);
+  };
+
+  /**
+   * 연결한 AI 모델이 만든 대본을 그대로 받는다. 내장 엔진과 같은 타임라인·
+   * 자막 계산을 통과하므로, 미리보기와 편집 패키지도 같은 값으로 나온다.
+   */
+  const adoptAiDrafts = (next: SceneDraft[], source: string): void => {
+    setDrafts(next);
+    setAiSource(source);
   };
 
   const adoptHook = (text: string): void => {
@@ -136,6 +151,12 @@ export function App() {
           variation={variation}
           onRegenerate={regenerate}
           onOpenPlan={() => setTab('plan')}
+          aiSource={aiSource}
+          onAiDrafts={adoptAiDrafts}
+          onAiReset={() => {
+            setAiSource(null);
+            setDrafts(draftBeatScene(topic, durationSec, variation, angle));
+          }}
         />
       ) : null}
 
