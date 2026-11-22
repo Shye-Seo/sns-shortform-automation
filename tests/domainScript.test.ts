@@ -97,20 +97,27 @@ describe('도메인별 4비트 대본', () => {
     }
   });
 
-  it('도메인 12종 모두 4비트를 만들고 문장을 마무리한다', () => {
+  it('도메인 19종 모두 4비트를 만들고 문장을 마무리한다', () => {
     const samples: Record<(typeof SCRIPT_DOMAIN_IDS)[number], string> = {
+      home: '전세사기 주의할점',
+      info: '청약 1순위 조건',
+      money: '월급 관리 고정지출 점검',
+      wedding: '스드메 예산 짜는 법',
+      travel: '겨울 제주 여행 2박3일 코스',
+      camera: '빈티지 디카 입문 추천',
+      care: '주 3회 러닝 루틴',
+      language: '영어 회화 공부법',
+      tech: '챗GPT 업무 자동화',
+      desk: '데스크테리어 조명 추천',
+      diary: '다꾸 입문',
+      beauty: '봄웜라 립 추천',
       daily: DAILY_TOPIC,
       career: '퇴사 후 첫 달 정리',
       product: '팔꿈치 마사지기 리뷰',
-      beauty: '봄웜라 립 추천',
       living: '부산 신혼집 3평 주방 수납 정리법',
       recipe: '냉장고 재료로 10분 저녁',
-      travel: '겨울 제주 여행 2박3일 코스',
       cafe: '부산 전포 카페 리스트',
-      money: '월급 관리 고정지출 점검',
       content: '인스타 릴스 대본 쓰는 법',
-      info: '청약 1순위 조건',
-      care: '주 3회 러닝 루틴',
     };
 
     for (const id of SCRIPT_DOMAIN_IDS) {
