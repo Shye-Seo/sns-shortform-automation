@@ -2,7 +2,7 @@
   "name": "shortform-engine",
   "version": "2.0.0",
   "description": "Distributed render queue and multi-tenant shortform publishing platform: priority queue with DLQ, Redis adapter, token-bucket rate limits, OAuth rotation, jittered slots, hook A/B telemetry and a studio console with time-series metrics",
-  "license": "MIT",
+  "license": "UNLICENSED",
   "author": "Seunghye Seo <tjtmdgp95@gmail.com> (https://github.com/Shye-Seo)",
   "homepage": "https://github.com/Shye-Seo/sns-shortform-automation#readme",
   "repository": {
@@ -40,8 +40,7 @@
   },
   "files": [
     "dist",
-    "README.md",
-    "LICENSE"
+    "README.md"
   ],
   "engines": {
     "node": ">=20.0.0"

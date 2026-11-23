@@ -48,7 +48,7 @@ const result = await build({
     'node:crypto': shim('node-crypto.ts'),
   },
   banner: {
-    js: '/* sns-shortform-automation · studio & comment-coupon console · MIT */',
+    js: '/* sns-shortform-automation · studio & comment-coupon console */',
   },
   metafile: true,
 });

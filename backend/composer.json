@@ -2,7 +2,7 @@
   "name": "shye-seo/shortform-backend",
   "description": "shortform-engine B2B backend — PHP 8.2 API/worker layer for the durable render queue, Meta Graph publishing and Naver Cloud SENS alimtalk",
   "type": "project",
-  "license": "MIT",
+  "license": "proprietary",
   "authors": [
     {
       "name": "Seunghye Seo",

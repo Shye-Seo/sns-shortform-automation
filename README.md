@@ -1746,5 +1746,8 @@ GitHub [@Shye-Seo](https://github.com/Shye-Seo) · tjtmdgp95@gmail.com · 정보
 
 ## License
 
-MIT — `LICENSE` 참고. 폰트(Pretendard)와 BGM은 포함하지 않으며 각 라이선스를 따라
+Copyright (c) 2026 Seunghye Seo. All rights reserved.
+
+이 저장소의 코드와 문서는 저작권자의 사전 서면 허가 없이 복제·수정·배포·재사용·상업적
+이용할 수 없습니다. 폰트(Pretendard)와 BGM은 포함하지 않으며 각 라이선스를 따라
 직접 준비해야 합니다.
