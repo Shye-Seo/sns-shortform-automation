@@ -56,17 +56,38 @@ type Notice = { tone: 'ok' | 'warn' | 'bad'; text: string };
 
 const DEFAULT_TOPIC = '부산 신혼집 3평 주방 수납 정리법';
 
+/** 합체 기획안에서 넘어오는 컷 묶음. 컷마다 자막과 내레이션이 이미 정해져 있다. */
+export interface CreatorSeed {
+  topic: string;
+  badge: string;
+  cuts: Array<{ caption: string; note: string; durationSec: number; accent?: string }>;
+}
+
 interface ImportedMedia {
   spec: ImportedCutSpec;
   loaded: LoadedImage | null;
   blocked: boolean;
 }
 
-export function CreatorStudioPanel() {
-  const [cuts, setCuts] = useState<CreatorCut[]>(() => sampleCuts());
-  const [topic, setTopic] = useState(DEFAULT_TOPIC);
+export function CreatorStudioPanel({ seed = null, onBackToPlan }: { seed?: CreatorSeed | null; onBackToPlan?: () => void }) {
+  const [cuts, setCuts] = useState<CreatorCut[]>(() =>
+    seed && seed.cuts.length > 0
+      ? seed.cuts.map((item, index) =>
+          makeCut({
+            kind: 'placeholder',
+            name: `기획안 컷 ${index + 1}`,
+            caption: item.caption,
+            note: item.note,
+            durationSec: item.durationSec,
+            origin: 'topic',
+            accent: item.accent,
+          }),
+        )
+      : sampleCuts(),
+  );
+  const [topic, setTopic] = useState(seed?.topic ?? DEFAULT_TOPIC);
   const [handle, setHandle] = useState('@shye');
-  const [badge, setBadge] = useState('주방 수납');
+  const [badge, setBadge] = useState(seed?.badge ?? '주방 수납');
   const [disclosure, setDisclosure] = useState<Disclosure>('none');
   const [bgm, setBgm] = useState<BgmId>('calm');
   const [bgmFile, setBgmFile] = useState<File | null>(null);
@@ -694,6 +715,19 @@ export function CreatorStudioPanel() {
 
   return (
     <div className="creator" data-testid="creator-studio">
+      {seed ? (
+        <div className="seed-banner" data-testid="creator-seed">
+          <span>
+            <strong>합체 기획안</strong>에서 넘어온 {seed.cuts.length}컷입니다. 자막과 시간이 이미 들어가 있으니
+            사진·영상만 채우면 됩니다.
+          </span>
+          {onBackToPlan ? (
+            <button type="button" className="btn small ghost" onClick={onBackToPlan}>
+              기획안으로 돌아가기
+            </button>
+          ) : null}
+        </div>
+      ) : null}
       <div className="grid sidebar creator-grid">
         <div className="stack">
           <Card

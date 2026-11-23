@@ -1,6 +1,6 @@
 <p align="center">
   <a href="https://github.com/Shye-Seo/sns-shortform-automation/actions/workflows/ci.yml"><img alt="CI Pipeline" src="https://github.com/Shye-Seo/sns-shortform-automation/actions/workflows/ci.yml/badge.svg" /></a>
-  <img alt="Tests" src="https://img.shields.io/badge/tests-864_(Vitest_679_%C2%B7_PHPUnit_185)-2E7D32?style=flat-square" />
+  <img alt="Tests" src="https://img.shields.io/badge/tests-742_(Vitest)-2E7D32?style=flat-square" />
   <img alt="Web demo" src="https://img.shields.io/badge/web_demo-live_(GitHub_Pages)-13315C?style=flat-square" />
 </p>
 
@@ -35,7 +35,7 @@ npm run dev:web               # 브라우저 콘솔 → http://127.0.0.1:4173
 **웹 데모**: <https://shye-seo.github.io/sns-shortform-automation/> — `main` / `/docs` 소스로 배포되어
 있습니다. **실사용 스튜디오**(사진·영상 업로드 또는 링크로 컷 편집 → 9:16 MP4/WebM과 4:5 카드뉴스 ZIP을
 브라우저에서 바로 렌더, 24장), 9:16 스튜디오, 게시물별 댓글 쿠폰 규칙(팔로워 전용·발송 간격 포함),
-발행 전 규제·안전영역 점검, 편집 패키지 내려받기, 예약 발행 한도, 훅 A/B 비교를 설치 없이 씁니다.
+발행 전 규제·안전영역 점검, 편집 패키지 내려받기, 예약 발행 한도, 훅 A/B 비교, 그리고 **기획 루프 4탭**(채널 정체성 → 트렌드 보관함·배수 분석 → 합체 기획안 → 성과 로그, §25)을 설치 없이 씁니다.
 화면에는 엔진 상태값(`dlq`, `failed`)이나 영문 오류 로그를 그대로 그리지 않고, 그 뜻과 다음 할 일을
 한국어로 옮겨 보여 줍니다(`web/model/labels.ts`).
 
@@ -1636,6 +1636,97 @@ npm run e2e          # playwright가 없으면 PLAYWRIGHT_PATH=/path/to/playwrig
   이때 화면은 몇 장이 대체됐는지 숫자로 알립니다.
 - 렌더 결과는 **파일 생성까지**입니다. 인스타·유튜브 업로드는 이 탭에서 하지 않습니다(발행은 17·19장의
   어댑터와 쿼터 계획이 담당).
+
+## 25. 기획 루프 — 채널 정체성 · 트렌드 보관함 · 합체 기획안 · 성과 로그 (2026-11-23)
+
+숏폼 운영에서 반복되는 질문은 "무엇을 만들까"입니다. 이번 개편은 그 질문을 네 단계의
+데이터로 바꿉니다. **채널 정체성**(말투·타깃·금지 표현) → **트렌드 보관함**(참고 영상이
+평소보다 몇 배 터졌는지와 그 영상이 쓴 구조) → **합체 기획안**(빌린 구조 + 내 말투) →
+**성과 로그**(올린 영상의 숫자를 다음 기획에 되돌려 주는 루프).
+
+### 25.1 네 단계가 주고받는 것
+
+| 단계 | 입력 | 출력 | 구현 |
+|------|------|------|------|
+| **채널 정체성** | 계정 이름·말투·타깃·고정 강점·금지 표현 | `voice.md`(복사 가능한 문서), 기획안의 문장 선택·검사 기준 | `src/services/sonder/identity.ts` |
+| **트렌드 보관함** | 참고 영상 링크·제목·자막, 조회수 + 그 계정 평소 조회수 중간값 | **배수(조회수 ÷ 중간값)**, 3배 이상 바이럴 판정, 빌린 구조(훅 패턴·네 박자 시간·전환 시점·CTA) | `viral.ts`, `reference.ts` |
+| **합체 기획안** | 보관함의 구조 + 채널 정체성 + 주제 | 후킹 3안(서로 다른 패턴) · 컷별 자막 · 박자표(빌린 구조 vs 이 대본) · 캡션 | `planner.ts` |
+| **성과 로그** | 조회·저장·공유·그때의 중간값 | 저장률·평균 배수·패턴별 순위 → 다음 기획안의 추천 근거 | `performance.ts` |
+
+### 25.2 배수와 구조 — 숫자와 문장을 어디까지 믿는가
+
+- 배수는 **평균이 아니라 중간값**으로 나눕니다. 이미 터진 영상 하나가 평균을 끌어올리면
+  판정이 무너지기 때문입니다. 3배 이상만 "빌려올 구조가 있는 영상"으로 부르고, 기준은
+  화면에 그대로 적습니다.
+- 구조는 **제목이 아니라 자막의 음절 분포**로 나눕니다. 자막이 있으면 문장마다 음절 수를
+  재서 훅/문제/해결/CTA의 비율을 잡고, 전환 시점(초)을 남깁니다. 자막이 한 줄이면 기본
+  배분(16/22/49/13%)으로 나누고, 무엇으로 계산했는지 `basis`(제목·자막·길이)에 남겨
+  읽지 못한 것을 읽은 척하지 않습니다.
+- 문장은 **베끼지 않습니다**. 첫 문장의 패턴(질문·숫자·방법·역발상·이야기)만 빌려
+  같은 앵글로 내 주제를 다시 씁니다. 패턴은 요청한 앵글이 아니라 **실제로 나온 문장에서
+  다시 읽어** 화면에 적습니다.
+
+### 25.3 시간은 한 곳에서만 계산된다
+
+기획안의 컷 시간·자막·박자표는 `scriptEngine`의 `planTimeBudget → fitDrafts →
+buildTimeline`이 계산합니다. 기획 화면이 따로 초를 세면 9:16 스튜디오의 자막과
+어긋나기 때문입니다. 빌린 구조의 박자와 계산된 박자가 다르면 숨기지 않고 박자표에
+나란히 놓고, 훅은 3초 안으로 줄인 것을 결함이 아니라 기준으로 설명합니다.
+"기획안에서 스튜디오로"를 누르면 컷(자막·시간)이 실사용 스튜디오 편집 목록으로
+그대로 들어갑니다.
+
+### 25.4 저장 위치 — 같은 화면, 두 가지 모드
+
+- **로컬 모드(GitHub Pages)**: `localStorage`에 저장. 서버가 없어도 배수·구조·기획안
+  계산이 100% 동작합니다.
+- **클라우드 모드(Vercel + Supabase)**: `/api/*` 서버 함수가 `channel_identities`,
+  `trend_vault_items`, `content_plans`, `performance_logs` 표에 저장. 화면은
+  `/api/health`의 `database` 값으로 두 모드를 가르고 상단 배지로 알려줍니다.
+  배포에서 LLM 키를 넣으면 기획안 문장을 모델이 쓰고, 실패하면 자동으로 내장
+  엔진으로 돌아와 그 사실을 한 줄로 알립니다.
+
+설정은 [VERCEL_SUPABASE_SETUP.md](VERCEL_SUPABASE_SETUP.md), 스키마는
+[supabase/schema.sql](supabase/schema.sql). 키는 서버 환경변수에만 있고 브라우저
+번들에는 들어가지 않습니다. 서버 함수의 표 접근은 메모리 구현과 같은 계약
+(`api/_lib/store.ts`)으로 검증합니다.
+
+### 25.5 검증
+
+| 파일 | 건수 | 고정한 것 |
+|------|------|-----------|
+| `tests/sonderReference.test.ts` | 14 | 중간값·배수·3배 판정·보관함 요약·유튜브/인스타/틱톡 주소 해석·oEmbed·네 박자 전환 시점·자막 없을 때 기본 배분 |
+| `tests/sonderPlanner.test.ts` | 20 | 3안 서로 다른 문장·3초 훅·컷 시간 연속성·금지 표현 검사·캡션 시그니처·성과 로그 기반 추천·모델 지시문/응답 파싱 |
+| `tests/sonderPerformance.test.ts` | 6 | 가중 저장률·기록 시점 배수·2건 미만 패턴 보류·기획안→로그 초안 |
+| `tests/sonderApi.test.ts` | 18 | health 3상태·정체성 CRUD·배수 서버 재계산·oEmbed 실패 대체·기획안 저장/갱신·모델 실패 시 내장 엔진 전환 |
+| `tests/sonderPanels.test.tsx` | 5 | jsdom에서 로컬 모드 판별→4탭→배수→보관함→기획안→스튜디오 연동→성과 기록 |
+
+E2E(`e2e/sonder.mjs`, Playwright)는 **21개 체크 전부 통과**입니다. 기획 4탭을
+실제 브라우저에서 끝까지 돌리고, 새로고침 후에도 기록이 남는지까지 확인합니다.
+
+<table>
+  <tr>
+    <td><img src="docs/preview/web-sonder-identity.png" alt="채널 정체성 — 프리셋 3채널과 voice.md" /></td>
+    <td><img src="docs/preview/web-sonder-trends.png" alt="트렌드 보관함 — 배수 계산과 빌린 구조" /></td>
+  </tr>
+  <tr>
+    <td><img src="docs/preview/web-sonder-plan.png" alt="합체 기획안 — 후킹 3안과 박자표" /></td>
+    <td><img src="docs/preview/web-sonder-performance.png" alt="성과 로그 — 저장률과 패턴별 순위" /></td>
+  </tr>
+</table>
+
+### 25.6 정직한 경계
+
+- **배수는 계정 소유자가 넣은 중간값을 믿습니다.** 조회수 자동 수집은 인스타·유튜브가
+  OAuth·API 서비스 약관으로 막혀 있어, 붙여넣기가 정확한 경로입니다.
+- 유튜브는 oEmbed로 **제목·작성자만** 가져옵니다. 자막은 붙여넣어야 박자까지 읽힙니다.
+  인스타그램 oEmbed는 앱 심사가 필요해 넣지 않았습니다.
+- 클라우드 모드의 데이터는 **이 프로젝트의 서비스 롤 키로 접근하는 단일 사용자
+  모델**입니다. 다른 사람과 쓰는 다중 사용자 분리는 schema.sql에 주석으로 방법을
+  남겨 두었고, 아직 구현하지 않았습니다.
+- 모델 대본은 **문장만** 모델에서 옵니다. 시간·자막·박자는 언제나 엔진이 계산하므로
+  모델이 이상한 초를 만들어도 화면이 어긋나지 않습니다.
+
+---
 
 ## 작성자
 

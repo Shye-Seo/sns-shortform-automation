@@ -1,5 +1,6 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { SceneDraft } from '../src/services/scriptEngine';
+import type { ContentPlan, TrendItem } from '../src/services/sonder/types';
 import type { AngleChoice } from '../src/types/plan';
 import { StudioPanel } from './panels/StudioPanel';
 import { CouponPanel } from './panels/CouponPanel';
@@ -7,16 +8,39 @@ import { PublishingPanel } from './panels/PublishingPanel';
 import { HookPanel } from './panels/HookPanel';
 import { CrossChannelPanel } from './panels/CrossChannelPanel';
 import { OsmuPanel } from './panels/OsmuPanel';
-import { CreatorStudioPanel } from './panels/CreatorStudioPanel';
+import { CreatorStudioPanel, type CreatorSeed } from './panels/CreatorStudioPanel';
+import { IdentityPanel } from './panels/IdentityPanel';
+import { TrendVaultPanel } from './panels/TrendVaultPanel';
+import { PlanComposerPanel } from './panels/PlanComposerPanel';
+import { PerformancePanel } from './panels/PerformancePanel';
 import { draftBeatScene } from './model/studio';
+import { resolveStore, type SonderMode, type SonderStore } from './model/sonder/repo';
 import { Button } from './ui';
 
-type TabId = 'studio' | 'creator' | 'plan' | 'osmu' | 'coupon' | 'calendar' | 'hooks';
+type TabId =
+  | 'identity'
+  | 'trends'
+  | 'plan'
+  | 'performance'
+  | 'studio'
+  | 'creator'
+  | 'cross'
+  | 'osmu'
+  | 'coupon'
+  | 'calendar'
+  | 'hooks';
 
-const TABS: Array<{ id: TabId; label: string }> = [
+const PLAN_TABS: Array<{ id: TabId; label: string }> = [
+  { id: 'identity', label: '채널 정체성' },
+  { id: 'trends', label: '트렌드 보관함' },
+  { id: 'plan', label: '합체 기획안' },
+  { id: 'performance', label: '성과 로그' },
+];
+
+const BUILD_TABS: Array<{ id: TabId; label: string }> = [
   { id: 'studio', label: '9:16 스튜디오' },
   { id: 'creator', label: '실사용 스튜디오' },
-  { id: 'plan', label: '크로스채널 기획' },
+  { id: 'cross', label: '크로스채널 기획' },
   { id: 'osmu', label: '한 편을 세 곳으로' },
   { id: 'coupon', label: '댓글 → DM 쿠폰' },
   { id: 'calendar', label: '발행 캘린더 · 쿼터' },
@@ -24,6 +48,18 @@ const TABS: Array<{ id: TabId; label: string }> = [
 ];
 
 const DEFAULT_TOPIC = '부산 신혼집 3평 주방 수납 정리법';
+
+const MODE_LABEL: Record<SonderMode, string> = {
+  checking: '연결 확인 중',
+  local: '로컬 모드',
+  cloud: '클라우드 DB 연결됨',
+};
+
+const MODE_HINT: Record<SonderMode, string> = {
+  checking: '저장 위치를 확인하고 있습니다.',
+  local: '이 브라우저에만 저장합니다. 서버 없이도 모든 계산이 그대로 동작합니다.',
+  cloud: 'Supabase에 저장합니다. 다른 기기에서도 같은 채널·기획안을 씁니다.',
+};
 
 export function App() {
   const [tab, setTab] = useState<TabId>('studio');
@@ -36,6 +72,32 @@ export function App() {
   const [drafts, setDrafts] = useState<SceneDraft[]>(() => draftBeatScene(DEFAULT_TOPIC, 45, 0, 'auto'));
   /** 대본을 만든 주체. AI 키로 생성하면 그 모델 이름이 들어간다. */
   const [aiSource, setAiSource] = useState<string | null>(null);
+
+  /** 저장 위치. 앱을 열 때 한 번만 확인한다. */
+  const [mode, setMode] = useState<SonderMode>('checking');
+  const [store, setStore] = useState<SonderStore | null>(null);
+  /** 트렌드 보관함 → 기획안으로 넘길 때 고른 항목. */
+  const [planTrend, setPlanTrend] = useState<TrendItem | null>(null);
+  /** 기획안 → 실사용 스튜디오로 넘길 컷 묶음. */
+  const [studioSeed, setStudioSeed] = useState<CreatorSeed | null>(null);
+  /** 기획안 → 성과 로그로 넘길 때 미리 채울 값. */
+  const [perfPlan, setPerfPlan] = useState<ContentPlan | null>(null);
+
+  useEffect(() => {
+    let alive = true;
+    resolveStore()
+      .then((resolved) => {
+        if (!alive) return;
+        setMode(resolved.mode);
+        setStore(resolved.store);
+      })
+      .catch(() => {
+        if (alive) setMode('local');
+      });
+    return () => {
+      alive = false;
+    };
+  }, []);
 
   /**
    * The topic is the input the script is derived from, so changing it has to
@@ -82,6 +144,13 @@ export function App() {
     setTab('studio');
   };
 
+  const openStudio = (seed: CreatorSeed): void => {
+    setStudioSeed(seed);
+    setTab('creator');
+  };
+
+  const showFlow = tab === 'studio' || tab === 'creator';
+
   return (
     <div className="app">
       <header className="masthead">
@@ -89,52 +158,79 @@ export function App() {
           <p className="eyebrow">숏폼 운영 콘솔</p>
           <h1>숏폼 스튜디오</h1>
           <p className="lede">
-            사진·영상을 올리거나 링크를 붙여 9:16 영상과 4:5 카드뉴스를 브라우저에서 바로 렌더링하고,
-            주제 하나로 대본·자막·발행 한도·댓글 쿠폰까지 이 화면에서 확인합니다.
+            채널 정체성과 트렌드 구조를 합쳐 기획안을 만들고, 올린 영상의 성과를 다시 다음 기획에 넣습니다. 사진·영상으로
+            만든 9:16 결과물과 발행 한도·댓글 쿠폰까지 이 화면에서 확인합니다.
           </p>
         </div>
         <div className="masthead-side">
-          <span className="status">
+          <span className={`status mode ${mode}`} title={MODE_HINT[mode]} data-testid="mode-badge">
             <span className="dot" aria-hidden="true" />
-            주제를 바꾸면 대본과 자막이 다시 계산됩니다
+            {MODE_LABEL[mode]}
           </span>
-          <span className="status-sub">9:16 렌더 · MP4/WebM · 카드뉴스 ZIP</span>
+          <span className="status-sub">
+            {mode === 'cloud' ? '채널·기획안·성과가 서버에 쌓입니다' : '서버 없이 브라우저에서 계산·저장'}
+          </span>
         </div>
       </header>
 
-      <div className="flow">
-        <span className="flow-step">
-          <span className="flow-no">1</span>사진·영상·링크
-        </span>
-        <span className="flow-arrow" aria-hidden="true">
-          →
-        </span>
-        <span className="flow-step">
-          <span className="flow-no">2</span>9:16 편집 · 미리보기
-        </span>
-        <span className="flow-arrow" aria-hidden="true">
-          →
-        </span>
-        <span className="flow-step">
-          <span className="flow-no">3</span>영상 · 카드뉴스 내보내기
-        </span>
-        <span className="flow-note">탭을 바꿔도 같은 주제로 이어집니다</span>
-      </div>
+      {showFlow ? (
+        <div className="flow">
+          <span className="flow-step">
+            <span className="flow-no">1</span>사진·영상·링크
+          </span>
+          <span className="flow-arrow" aria-hidden="true">
+            →
+          </span>
+          <span className="flow-step">
+            <span className="flow-no">2</span>9:16 편집 · 미리보기
+          </span>
+          <span className="flow-arrow" aria-hidden="true">
+            →
+          </span>
+          <span className="flow-step">
+            <span className="flow-no">3</span>영상 · 카드뉴스 내보내기
+          </span>
+          <span className="flow-note">탭을 바꿔도 같은 주제로 이어집니다</span>
+        </div>
+      ) : null}
 
-      <nav className="tabs" role="tablist" aria-label="콘솔 영역">
-        {TABS.map((item) => (
-          <button
-            key={item.id}
-            type="button"
-            role="tab"
-            className="tab"
-            aria-selected={tab === item.id}
-            onClick={() => setTab(item.id)}
-          >
-            {item.label}
-          </button>
-        ))}
-      </nav>
+      <div className="tabs-wrap">
+        <nav className="tabs plan-tabs" role="tablist" aria-label="기획">
+          <span className="tabs-label" aria-hidden="true">
+            기획
+          </span>
+          {PLAN_TABS.map((item) => (
+            <button
+              key={item.id}
+              type="button"
+              role="tab"
+              className="tab"
+              aria-selected={tab === item.id}
+              onClick={() => setTab(item.id)}
+            >
+              {item.label}
+            </button>
+          ))}
+        </nav>
+
+        <nav className="tabs build-tabs" role="tablist" aria-label="제작·운영">
+          <span className="tabs-label" aria-hidden="true">
+            제작
+          </span>
+          {BUILD_TABS.map((item) => (
+            <button
+              key={item.id}
+              type="button"
+              role="tab"
+              className="tab"
+              aria-selected={tab === item.id}
+              onClick={() => setTab(item.id)}
+            >
+              {item.label}
+            </button>
+          ))}
+        </nav>
+      </div>
 
       {tab === 'studio' ? (
         <div className="creator-banner">
@@ -146,6 +242,37 @@ export function App() {
           </Button>
         </div>
       ) : null}
+
+      {tab === 'identity' ? <IdentityPanel store={store} mode={mode} /> : null}
+
+      {tab === 'trends' ? (
+        <TrendVaultPanel
+          store={store}
+          mode={mode}
+          onUseTrend={(item) => {
+            setPlanTrend(item);
+            setTab('plan');
+          }}
+        />
+      ) : null}
+
+      {tab === 'plan' ? (
+        <PlanComposerPanel
+          store={store}
+          mode={mode}
+          topic={topic}
+          onTopic={changeTopic}
+          initialTrend={planTrend}
+          onOpenStudio={openStudio}
+          onOpenPerformance={(plan) => {
+            setPerfPlan(plan);
+            setTab('performance');
+          }}
+          onOpenTrends={() => setTab('trends')}
+        />
+      ) : null}
+
+      {tab === 'performance' ? <PerformancePanel store={store} mode={mode} initialPlan={perfPlan} /> : null}
 
       {tab === 'studio' ? (
         <StudioPanel
@@ -164,7 +291,7 @@ export function App() {
           onAngle={changeAngle}
           variation={variation}
           onRegenerate={regenerate}
-          onOpenPlan={() => setTab('plan')}
+          onOpenPlan={() => setTab('cross')}
           aiSource={aiSource}
           onAiDrafts={adoptAiDrafts}
           onAiReset={() => {
@@ -174,19 +301,20 @@ export function App() {
         />
       ) : null}
 
-      {tab === 'creator' ? <CreatorStudioPanel /> : null}
+      {tab === 'creator' ? (
+        <CreatorStudioPanel
+          key={studioSeed ? `seed-${studioSeed.topic}-${studioSeed.cuts.length}` : 'sample'}
+          seed={studioSeed}
+          onBackToPlan={() => setTab('plan')}
+        />
+      ) : null}
 
-      {tab === 'plan' ? (
+      {tab === 'cross' ? (
         <CrossChannelPanel topic={topic} onTopic={changeTopic} onBackToStudio={() => setTab('studio')} />
       ) : null}
 
       {tab === 'osmu' ? (
-        <OsmuPanel
-          topic={topic}
-          drafts={drafts}
-          durationSec={durationSec}
-          onBackToStudio={() => setTab('studio')}
-        />
+        <OsmuPanel topic={topic} drafts={drafts} durationSec={durationSec} onBackToStudio={() => setTab('studio')} />
       ) : null}
 
       {tab === 'coupon' ? <CouponPanel /> : null}

@@ -1,0 +1,23 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "buildCommand": "npm run build:web",
+  "outputDirectory": "docs",
+  "cleanUrls": false,
+  "trailingSlash": false,
+  "rewrites": [{ "source": "/api/(.*)", "destination": "/api/$1" }],
+  "headers": [
+    {
+      "source": "/app/(.*)",
+      "headers": [{ "key": "cache-control", "value": "public, max-age=600" }]
+    },
+    {
+      "source": "/index.html",
+      "headers": [{ "key": "cache-control", "value": "public, max-age=0, must-revalidate" }]
+    }
+  ],
+  "functions": {
+    "api/*.ts": {
+      "maxDuration": 20
+    }
+  }
+}

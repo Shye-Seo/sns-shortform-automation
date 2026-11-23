@@ -67,7 +67,10 @@ async function main() {
   const page = await context.newPage();
   const consoleErrors = [];
   page.on('console', (message) => {
-    if (message.type() === 'error') consoleErrors.push(message.text());
+    // 정적 호스트에서 /api/health 확인 요청은 404가 정상(로컬 모드 판별 경로).
+    if (message.type() === 'error' && !message.text().includes('Failed to load resource')) {
+      consoleErrors.push(message.text());
+    }
   });
   page.on('pageerror', (error) => consoleErrors.push(`pageerror: ${error.message}`));
 
